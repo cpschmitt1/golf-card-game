@@ -89,4 +89,50 @@ seat, and the first should immediately show "This game was opened in another tab
   this is unrelated to a player's own connection dropping, which is handled).
 - No standing-in for a host who disconnects and never returns — they keep host privileges (start
   game / next hole) across reconnects, but there's no host handoff if they leave for good.
-- Not deployed yet. The server needs a host that supports long-lived WebSocket connections (Render, Fly.io, Railway, etc.); the client can be deployed as a static site pointed at the deployed server via `VITE_SERVER_URL`.
+- Single server instance only — game state lives in that one process's memory, so this can't be
+  scaled to multiple replicas without adding a shared store (e.g. Redis) for room state and the
+  Socket.IO adapter. Fine for a friends game; don't bump Railway's replica count above 1.
+
+## Deploying to Railway
+
+This is an npm-workspaces monorepo, so the **engine package must be built before either the server
+or the client**, and both services need their Railway "Root Directory" left at the repo root (not
+pointed at `packages/server` or `packages/client`) so `npm install` can see the workspace config —
+custom Build/Start commands target the right package instead.
+
+Create **two Railway services from this repo** (same GitHub repo, added twice):
+
+**1. Server service**
+- Root Directory: `/` (leave as the repo root)
+- Build Command: `npm run build:server`
+- Start Command: `npm run start:server`
+- Settings → Networking → Generate Domain (needs a public URL so browsers can reach it)
+- Variables: `CLIENT_ORIGIN` — set once you have the client's URL (step 2); can be a comma-separated
+  list if you later add a custom domain. `PORT` is set automatically by Railway — don't set it.
+- Optional: Settings → Deploy → Healthcheck Path → `/health`
+
+**2. Client service**
+- Root Directory: `/` (same repo, same setting)
+- Build Command: `npm run build:client`
+- Start Command: `npm run start:client`
+- Settings → Networking → Generate Domain
+- Variables: `VITE_SERVER_URL` = the server's public URL from step 1 (e.g.
+  `https://golf-server-production.up.railway.app`). This is baked in **at build time** (Vite), so
+  changing it later requires a redeploy of this service, not just a restart.
+
+**Then go back to the server service** and set `CLIENT_ORIGIN` to the client's public URL from step
+2 — Railway redeploys automatically on a variable change. After that, both URLs know about each
+other and the app is live at the client's domain.
+
+Railway's generated domains are HTTPS out of the box, and Socket.IO's websocket transport upgrades
+to `wss://` automatically from an `https://` URL — no extra config needed there. Locally, you can
+sanity-check the exact production build Railway will run with:
+
+```bash
+npm run build:server && npm run build:client
+CLIENT_ORIGIN=http://localhost:4173 PORT=3001 node packages/server/dist/index.js &
+cd packages/client && PORT=4173 npm run start
+```
+
+(then open http://localhost:4173 — the default `VITE_SERVER_URL` of `http://localhost:3001` matches
+the server started above, so no `.env` needed for this local check specifically).

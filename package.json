@@ -6,10 +6,17 @@
   "workspaces": [
     "packages/*"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build:engine": "npm run build -w packages/engine",
     "dev": "npm run build:engine && concurrently -k -n engine,server,client -c blue,green,magenta \"npm:dev -w packages/engine\" \"npm:dev -w packages/server\" \"npm:dev -w packages/client\"",
     "build": "npm run build -w packages/engine && npm run build -w packages/server && npm run build -w packages/client",
+    "build:server": "npm run build -w packages/engine && npm run build -w packages/server",
+    "build:client": "npm run build -w packages/engine && npm run build -w packages/client",
+    "start:server": "npm run start -w packages/server",
+    "start:client": "npm run start -w packages/client",
     "test": "npm run test -w packages/engine"
   },
   "devDependencies": {

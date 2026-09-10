@@ -22,15 +22,20 @@ import {
 import { RoomStore, type RoomRecord } from './rooms.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
+// Comma-separated so a custom domain can be added alongside a platform-provided one
+// (e.g. Railway's *.up.railway.app domain) without needing a code change to redeploy.
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const app = express();
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(cors({ origin: CLIENT_ORIGINS }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: CLIENT_ORIGIN },
+  cors: { origin: CLIENT_ORIGINS },
 });
 
 const rooms = new RoomStore();

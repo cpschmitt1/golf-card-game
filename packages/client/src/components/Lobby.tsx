@@ -22,6 +22,7 @@ export function Lobby({ lobby, playerId, onStart, error }: LobbyProps) {
             {p.name}
             {p.id === lobby.hostId && <span className="badge">host</span>}
             {p.id === playerId && <span className="badge badge-you">you</span>}
+            {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
           </li>
         ))}
       </ul>

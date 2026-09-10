@@ -5,6 +5,7 @@ import type { GameStateView } from './view.js';
 export interface LobbyPlayer {
   id: string;
   name: string;
+  connected: boolean;
 }
 
 export interface LobbyView {
@@ -16,11 +17,27 @@ export interface LobbyView {
 
 export type AckResponse<T> = { ok: true; data: T } | { ok: false; error: string };
 
+export interface JoinedRoom {
+  roomCode: string;
+  playerId: string;
+  /** Secret credential the client must store and present to `room:reconnect`. Never broadcast. */
+  playerToken: string;
+}
+
+export interface ResumedRoom {
+  playerId: string;
+  /** Present when the room's match hasn't started yet. */
+  lobby: LobbyView | null;
+  /** Present once the match has started — this player's redacted view of the current state. */
+  gameState: GameStateView | null;
+}
+
 export interface ClientToServerEvents {
-  'room:create': (payload: { playerName: string }, ack: (res: AckResponse<{ roomCode: string; playerId: string }>) => void) => void;
-  'room:join': (
-    payload: { roomCode: string; playerName: string },
-    ack: (res: AckResponse<{ roomCode: string; playerId: string }>) => void,
+  'room:create': (payload: { playerName: string }, ack: (res: AckResponse<JoinedRoom>) => void) => void;
+  'room:join': (payload: { roomCode: string; playerName: string }, ack: (res: AckResponse<JoinedRoom>) => void) => void;
+  'room:reconnect': (
+    payload: { roomCode: string; playerId: string; playerToken: string },
+    ack: (res: AckResponse<ResumedRoom>) => void,
   ) => void;
   'room:start': (payload: { roomCode: string }, ack: (res: AckResponse<null>) => void) => void;
   'game:peek': (payload: { slotIndices: [number, number] }, ack: (res: AckResponse<null>) => void) => void;

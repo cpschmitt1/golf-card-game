@@ -36,7 +36,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 const rooms = new RoomStore();
 
 interface SocketData {
-  playerId: string;
+  playerId?: string;
   roomCode?: string;
 }
 
@@ -74,17 +74,54 @@ function requireGameState(room: RoomRecord): GameState {
   return room.gameState;
 }
 
-io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>) => {
-  socket.data.playerId = socket.id;
+function requirePlayerId(socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>): string {
+  if (!socket.data.playerId) throw new GolfEngineError('NOT_IN_ROOM', 'You are not in a room yet.');
+  return socket.data.playerId;
+}
 
+function setConnected(room: RoomRecord, playerId: string, connected: boolean): void {
+  const target = room.gameState ? room.gameState.players : room.lobbyPlayers;
+  const player = target.find((p) => p.id === playerId);
+  if (player) player.connected = connected;
+}
+
+/**
+ * Binds a socket to a stable player identity: joins the Socket.IO room used to target that
+ * player in broadcasts, evicts any stale socket previously bound to them (e.g. a dead tab that
+ * hasn't timed out yet), and marks them connected.
+ */
+function bindSocketToPlayer(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>,
+  room: RoomRecord,
+  playerId: string,
+): void {
+  const staleSocketId = room.socketByPlayerId.get(playerId);
+  room.socketByPlayerId.set(playerId, socket.id);
+  if (staleSocketId && staleSocketId !== socket.id) {
+    io.sockets.sockets.get(staleSocketId)?.disconnect(true);
+  }
+
+  socket.data.playerId = playerId;
+  socket.data.roomCode = room.code;
+  socket.join(playerId);
+
+  setConnected(room, playerId, true);
+  rooms.reconcileEmptyTimer(room);
+}
+
+function broadcastRoom(room: RoomRecord): void {
+  if (room.gameState) broadcastGameState(room.gameState);
+  else broadcastLobby(room);
+}
+
+io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>) => {
   socket.on('room:create', ({ playerName }, callback) => {
     ack(callback, () => {
       const name = playerName.trim().slice(0, 24) || 'Player';
-      const room = rooms.create(socket.id, name);
-      socket.data.roomCode = room.code;
-      socket.join(room.code);
+      const { room, playerId, token } = rooms.create(name);
+      bindSocketToPlayer(socket, room, playerId);
       broadcastLobby(room);
-      return { roomCode: room.code, playerId: socket.id };
+      return { roomCode: room.code, playerId, playerToken: token };
     });
   });
 
@@ -94,18 +131,33 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       if (room.gameState) throw new GolfEngineError('ALREADY_STARTED', 'That game has already started.');
       if (room.lobbyPlayers.length >= 6) throw new GolfEngineError('ROOM_FULL', 'That room already has 6 players.');
       const name = playerName.trim().slice(0, 24) || 'Player';
-      room.lobbyPlayers.push({ id: socket.id, name });
-      socket.data.roomCode = room.code;
-      socket.join(room.code);
+      const { playerId, token } = rooms.join(room, name);
+      bindSocketToPlayer(socket, room, playerId);
       broadcastLobby(room);
-      return { roomCode: room.code, playerId: socket.id };
+      return { roomCode: room.code, playerId, playerToken: token };
+    });
+  });
+
+  socket.on('room:reconnect', ({ roomCode, playerId, playerToken }, callback) => {
+    ack(callback, () => {
+      const room = requireRoom(roomCode);
+      if (!rooms.verifyToken(room, playerId, playerToken)) {
+        throw new GolfEngineError('INVALID_SESSION', 'Could not resume that session — please rejoin.');
+      }
+      bindSocketToPlayer(socket, room, playerId);
+      broadcastRoom(room);
+      return {
+        playerId,
+        lobby: room.gameState ? null : rooms.toLobbyView(room),
+        gameState: room.gameState ? getPlayerView(room.gameState, playerId) : null,
+      };
     });
   });
 
   socket.on('room:start', ({ roomCode }, callback) => {
     ack(callback, () => {
       const room = requireRoom(roomCode);
-      if (room.hostId !== socket.id) throw new GolfEngineError('NOT_HOST', 'Only the host can start the game.');
+      if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can start the game.');
       if (room.gameState) throw new GolfEngineError('ALREADY_STARTED', 'The game has already started.');
       const match = createMatch(room.code, room.hostId, room.lobbyPlayers);
       room.gameState = dealHole(match);
@@ -118,7 +170,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
-      room.gameState = choosePeek(state, socket.id, slotIndices);
+      room.gameState = choosePeek(state, requirePlayerId(socket), slotIndices);
       broadcastGameState(room.gameState);
       return null;
     });
@@ -128,7 +180,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
-      room.gameState = drawFromDrawPile(state, socket.id);
+      room.gameState = drawFromDrawPile(state, requirePlayerId(socket));
       broadcastGameState(room.gameState);
       return null;
     });
@@ -138,7 +190,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
-      room.gameState = drawFromDiscardPile(state, socket.id);
+      room.gameState = drawFromDiscardPile(state, requirePlayerId(socket));
       broadcastGameState(room.gameState);
       return null;
     });
@@ -148,7 +200,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
-      room.gameState = swapCard(state, socket.id, slotIndex);
+      room.gameState = swapCard(state, requirePlayerId(socket), slotIndex);
       broadcastGameState(room.gameState);
       return null;
     });
@@ -158,7 +210,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
-      room.gameState = discardDrawn(state, socket.id);
+      room.gameState = discardDrawn(state, requirePlayerId(socket));
       broadcastGameState(room.gameState);
       return null;
     });
@@ -168,7 +220,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
-      if (room.hostId !== socket.id) throw new GolfEngineError('NOT_HOST', 'Only the host can start the next hole.');
+      if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can start the next hole.');
       room.gameState = dealHole(state);
       broadcastGameState(room.gameState);
       return null;
@@ -176,27 +228,19 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   socket.on('disconnect', () => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
+    const { roomCode, playerId } = socket.data;
+    if (!roomCode || !playerId) return;
     const room = rooms.get(roomCode);
     if (!room) return;
 
-    if (!room.gameState) {
-      room.lobbyPlayers = room.lobbyPlayers.filter((p) => p.id !== socket.id);
-      if (room.lobbyPlayers.length === 0) {
-        rooms.delete(room.code);
-      } else {
-        if (room.hostId === socket.id) room.hostId = room.lobbyPlayers[0].id;
-        broadcastLobby(room);
-      }
-      return;
-    }
+    // If a newer socket already took over this player's seat (e.g. this is the stale
+    // connection being evicted during a reconnect), don't clobber the fresh state.
+    if (room.socketByPlayerId.get(playerId) !== socket.id) return;
 
-    const player = room.gameState.players.find((p) => p.id === socket.id);
-    if (player) {
-      player.connected = false;
-      broadcastGameState(room.gameState);
-    }
+    room.socketByPlayerId.delete(playerId);
+    setConnected(room, playerId, false);
+    rooms.reconcileEmptyTimer(room);
+    broadcastRoom(room);
   });
 });
 

@@ -132,6 +132,19 @@ input {
   color: white;
 }
 
+.connection-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: #b3261e;
+  color: white;
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+}
+
 /* Game screen */
 
 .game-header {

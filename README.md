@@ -83,6 +83,28 @@ same flow.
 browser (deliberately triggering the shared-identity case) — the second tab should take over the
 seat, and the first should immediately show "This game was opened in another tab or window."
 
+## Host controls, and the end-of-hole flow
+
+After every hole ends normally (final turns all taken and the hole scored), everyone's cards are
+revealed as part of scoring — but the board shows that reveal on its own for a moment ("Hole N is
+over — here's everyone's final hand", with a **See Scores →** button) before the scoreboard pops
+up, so you actually get to look at what everyone had instead of it vanishing straight under a
+modal. This is purely client-local and per-player — nobody's forced through it in lockstep, and
+clicking through doesn't affect what other players see.
+
+The host has two controls, both host-only and both visible in `GameBoard`'s header/scoreboard:
+
+- **End Match** — always available, in any phase, including mid-hole. Clicking it (after a confirm
+  prompt) ends the match immediately. If a hole is in progress, it's **discarded**: no score is
+  recorded for it, and — unlike a normal hole ending — nobody's cards are revealed, since the hole
+  never happened as far as scoring is concerned. Between holes, there's nothing in-progress to
+  discard, so it's just a flag flip straight to final results.
+- **Play Again** — appears on the final-results screen once the match is over (naturally at hole 18,
+  or via End Match). Resets the room back to the lobby with the **same room code and same players**
+  (scores reset to zero), so a group can start another match without everyone leaving and
+  re-sharing a link. Reconnect credentials aren't affected by this — it only touches the
+  lobby/match state, not the room's identity bookkeeping.
+
 ## Known v1 limitations
 
 - Game state is in-memory only — restarting the *server* ends any in-progress games (see above;

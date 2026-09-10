@@ -13,11 +13,26 @@ interface GameBoardProps {
   onSwap: (slotIndex: number) => void;
   onDiscard: () => void;
   onNextHole: () => void;
+  onEndMatch: () => void;
+  onPlayAgain: () => void;
   onLeave: () => void;
 }
 
-export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, onSwap, onDiscard, onNextHole, onLeave }: GameBoardProps) {
+export function GameBoard({
+  state,
+  playerId,
+  onPeek,
+  onDrawDraw,
+  onDrawDiscard,
+  onSwap,
+  onDiscard,
+  onNextHole,
+  onEndMatch,
+  onPlayAgain,
+  onLeave,
+}: GameBoardProps) {
   const [selectedPeekSlots, setSelectedPeekSlots] = useState<number[]>([]);
+  const [readyForScoreboard, setReadyForScoreboard] = useState(false);
 
   const me = state.players.find((p) => p.id === playerId);
   const others = state.players.filter((p) => p.id !== playerId);
@@ -26,12 +41,28 @@ export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, 
   const isHost = state.hostId === playerId;
   const myPendingDraw = isMyTurn && me?.hasPendingDraw ? { card: me.pendingDrawCard, source: me.pendingDrawSource } : null;
   const canDraw = isMyTurn && !amAwaitingPeek && (state.phase === 'turn' || state.phase === 'final-turns') && !me?.hasPendingDraw;
+  // A hole that ended normally reveals every card as part of scoring; a hole discarded by
+  // "End Match" mid-round does not (it's void, so there's nothing new to show). That difference
+  // is exactly the signal for whether the "here's everyone's final hand" pause is worth showing.
+  const allRevealed = state.players.every((p) => p.grid.every((slot) => slot.faceUp));
+  const showReveal = state.phase === 'complete' && allRevealed && !readyForScoreboard;
+  const showScoreboard = state.phase === 'complete' && (!allRevealed || readyForScoreboard);
 
   useEffect(() => {
     setSelectedPeekSlots([]);
   }, [amAwaitingPeek, state.holeNumber]);
 
+  useEffect(() => {
+    setReadyForScoreboard(false);
+  }, [state.holeNumber]);
+
   if (!me) return null;
+
+  function handleEndMatch() {
+    if (window.confirm('End the match now? This discards the current hole for everyone.')) {
+      onEndMatch();
+    }
+  }
 
   function handleMySlotClick(index: number) {
     if (amAwaitingPeek) {
@@ -67,7 +98,19 @@ export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, 
                   ? 'Your turn'
                   : `${currentPlayerName}'s turn`}
         </div>
+        {isHost && !state.matchComplete && (
+          <button className="end-match-button" onClick={handleEndMatch}>
+            End Match
+          </button>
+        )}
       </header>
+
+      {showReveal && (
+        <div className="reveal-banner">
+          <p>Hole {state.holeNumber} is over — here's everyone's final hand.</p>
+          <button onClick={() => setReadyForScoreboard(true)}>See Scores →</button>
+        </div>
+      )}
 
       <section className="opponents-row">
         {others.map((p) => (
@@ -127,13 +170,14 @@ export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, 
         <div className="opponent-total">Total: {me.totalScore}</div>
       </section>
 
-      {state.phase === 'complete' && (
+      {showScoreboard && (
         <Scoreboard
           players={state.players}
           holeNumber={state.holeNumber}
           matchComplete={state.matchComplete}
           isHost={isHost}
           onNextHole={onNextHole}
+          onPlayAgain={onPlayAgain}
           onLeave={onLeave}
         />
       )}

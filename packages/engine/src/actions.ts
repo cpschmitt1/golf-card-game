@@ -167,6 +167,27 @@ function advanceTurn(state: GameState, justTriggeredFinalTurns: boolean): GameSt
   return state;
 }
 
+/**
+ * Ends the match immediately, in any phase. If a hole is in progress, it is discarded — no score
+ * is recorded for it (unlike `scoreHole`, this never touches `holeScores`/`totalScore`), and cards
+ * are left exactly as they were rather than being revealed. Between holes (phase already
+ * 'complete'), there's nothing in-progress to discard, so this is just a flag flip.
+ */
+export function endMatch(state: GameState): GameState {
+  if (state.matchComplete) {
+    throw new GolfEngineError('MATCH_COMPLETE', 'The match is already over.');
+  }
+
+  const next = clone(state);
+  next.matchComplete = true;
+  next.phase = 'complete';
+  next.pendingDraw = null;
+  next.playersAwaitingPeek = [];
+  next.finisherId = null;
+  next.finalTurnsRemaining = 0;
+  return next;
+}
+
 function scoreHole(state: GameState): GameState {
   for (const player of state.players) {
     for (const slot of player.grid) slot.faceUp = true;

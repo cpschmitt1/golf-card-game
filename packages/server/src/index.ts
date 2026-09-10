@@ -10,6 +10,7 @@ import {
   discardDrawn,
   drawFromDiscardPile,
   drawFromDrawPile,
+  endMatch,
   getPlayerView,
   GolfEngineError,
   swapCard,
@@ -192,6 +193,21 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     });
   });
 
+  socket.on('room:restart', (_payload, callback) => {
+    ack(callback, () => {
+      const room = requireRoom(socket.data.roomCode);
+      const state = requireGameState(room);
+      if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can start a new match.');
+      if (!state.matchComplete) throw new GolfEngineError('NOT_COMPLETE', 'The match is not finished yet.');
+      // Rebuild the lobby roster from the finished match's players (preserves connected status);
+      // playerTokens/socketByPlayerId are untouched, so everyone's reconnect credentials still work.
+      room.lobbyPlayers = state.players.map((p) => ({ id: p.id, name: p.name, connected: p.connected }));
+      room.gameState = null;
+      broadcastLobby(room);
+      return null;
+    });
+  });
+
   socket.on('game:peek', ({ slotIndices }, callback) => {
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);
@@ -248,6 +264,17 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const state = requireGameState(room);
       if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can start the next hole.');
       room.gameState = dealHole(state);
+      broadcastGameState(room.gameState);
+      return null;
+    });
+  });
+
+  socket.on('game:endMatch', (_payload, callback) => {
+    ack(callback, () => {
+      const room = requireRoom(socket.data.roomCode);
+      const state = requireGameState(room);
+      if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can end the match.');
+      room.gameState = endMatch(state);
       broadcastGameState(room.gameState);
       return null;
     });

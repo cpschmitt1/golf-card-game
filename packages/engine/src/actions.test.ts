@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { choosePeek, discardDrawn, drawFromDiscardPile, drawFromDrawPile, swapCard } from './actions.js';
+import { choosePeek, discardDrawn, drawFromDiscardPile, drawFromDrawPile, endMatch, swapCard } from './actions.js';
 import { GolfEngineError } from './errors.js';
 import { createMatch, dealHole } from './gameState.js';
 import type { GameState } from './types.js';
@@ -145,5 +145,59 @@ describe('full hole flow', () => {
     // The other player should still have at least one face-down card left to reveal via their final turn.
     const otherPlayer = state.players.find((p) => p.id === otherPlayerId)!;
     expect(otherPlayer.grid.some((s) => !s.faceUp)).toBe(true);
+  });
+});
+
+describe('endMatch', () => {
+  it('discards an in-progress hole: no score recorded, cards left exactly as they were', () => {
+    let state = newTwoPlayerHole();
+    state = choosePeek(state, 'p1', [0, 1]);
+    state = choosePeek(state, 'p2', [0, 1]);
+    const currentId = state.players[state.currentPlayerIndex].id;
+    state = drawFromDrawPile(state, currentId);
+    const player = state.players.find((p) => p.id === currentId)!;
+    const faceDownSlot = player.grid.findIndex((s) => !s.faceUp);
+    state = swapCard(state, currentId, faceDownSlot); // one real move into the hole, still mid-hole
+
+    const faceUpBefore = state.players.map((p) => p.grid.map((s) => s.faceUp));
+
+    state = endMatch(state);
+
+    expect(state.matchComplete).toBe(true);
+    expect(state.phase).toBe('complete');
+    expect(state.players.every((p) => p.holeScores.length === 0)).toBe(true);
+    expect(state.players.every((p) => p.totalScore === 0)).toBe(true);
+    // Nothing got newly revealed — the discarded hole's hidden cards stay hidden.
+    state.players.forEach((p, i) => {
+      expect(p.grid.map((s) => s.faceUp)).toEqual(faceUpBefore[i]);
+    });
+  });
+
+  it('between holes, just marks the match complete without touching already-recorded scores', () => {
+    let state = newTwoPlayerHole();
+    state = choosePeek(state, 'p1', [0, 1]);
+    state = choosePeek(state, 'p2', [0, 1]);
+    let guard = 0;
+    while (state.phase === 'turn' || state.phase === 'final-turns') {
+      if (++guard > 100) throw new Error('runaway loop');
+      const currentId = state.players[state.currentPlayerIndex].id;
+      state = drawFromDrawPile(state, currentId);
+      const player = state.players.find((p) => p.id === currentId)!;
+      const faceDownSlot = player.grid.findIndex((s) => !s.faceUp);
+      state = swapCard(state, currentId, faceDownSlot);
+    }
+    expect(state.phase).toBe('complete'); // hole 1 finished normally
+    const scoresBefore = state.players.map((p) => p.totalScore);
+
+    state = endMatch(state);
+
+    expect(state.matchComplete).toBe(true);
+    expect(state.players.map((p) => p.totalScore)).toEqual(scoresBefore);
+  });
+
+  it('refuses to end an already-completed match', () => {
+    let state = newTwoPlayerHole();
+    state = endMatch(state);
+    expect(() => endMatch(state)).toThrow(GolfEngineError);
   });
 });

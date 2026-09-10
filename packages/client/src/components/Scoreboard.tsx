@@ -6,11 +6,15 @@ interface ScoreboardProps {
   matchComplete: boolean;
   isHost: boolean;
   onNextHole: () => void;
+  onPlayAgain: () => void;
   onLeave: () => void;
 }
 
-export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextHole, onLeave }: ScoreboardProps) {
+export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextHole, onPlayAgain, onLeave }: ScoreboardProps) {
   const ranked = [...players].sort((a, b) => a.totalScore - b.totalScore);
+  // holeScores can be empty if the match was ended before any hole finished (e.g. "End Match"
+  // used during hole 1's peek/turn phase, before it was ever scored).
+  const hasCompletedHoles = players.some((p) => p.holeScores.length > 0);
 
   return (
     <div className="scoreboard-overlay">
@@ -32,7 +36,7 @@ export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextH
                   {matchComplete && i === 0 && '🏆 '}
                   {p.name}
                 </td>
-                <td>{p.holeScores[p.holeScores.length - 1]}</td>
+                <td>{p.holeScores.length > 0 ? p.holeScores[p.holeScores.length - 1] : '—'}</td>
                 <td>{p.totalScore}</td>
               </tr>
             ))}
@@ -41,7 +45,11 @@ export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextH
 
         {!matchComplete && isHost && <button onClick={onNextHole}>Start Hole {holeNumber + 1}</button>}
         {!matchComplete && !isHost && <p className="hint">Waiting for the host to start the next hole…</p>}
-        {matchComplete && <p className="hint">18 holes complete — lowest score wins!</p>}
+        {matchComplete && !hasCompletedHoles && <p className="hint">Match ended before any hole finished — no scores to show.</p>}
+        {matchComplete && hasCompletedHoles && <p className="hint">Match complete — lowest score wins!</p>}
+
+        {matchComplete && isHost && <button onClick={onPlayAgain}>Play Again</button>}
+        {matchComplete && !isHost && <p className="hint">Waiting for the host to start a new match…</p>}
 
         <button className="link-button" onClick={onLeave}>
           Leave game

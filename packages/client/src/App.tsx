@@ -58,6 +58,11 @@ export default function App() {
     }
     function handleLobby(update: LobbyView) {
       setLobby(update);
+      // A lobby:update only ever arrives when the room has no active match (see broadcastRoom on
+      // the server) — including right after a host uses "Play Again" to reset a finished match
+      // back to the lobby. Without this, a stale gameState would keep GameBoard mounted forever
+      // since App's render order checks gameState before lobby.
+      setGameState(null);
     }
     function handleGameState(update: GameStateView) {
       setGameState(update);
@@ -162,6 +167,8 @@ export default function App() {
           onSwap={(slotIndex) => socket.emit('game:swap', { slotIndex }, reportIfError)}
           onDiscard={() => socket.emit('game:discard', {}, reportIfError)}
           onNextHole={() => socket.emit('game:nextHole', {}, reportIfError)}
+          onEndMatch={() => socket.emit('game:endMatch', {}, reportIfError)}
+          onPlayAgain={() => socket.emit('room:restart', {}, reportIfError)}
           onLeave={handleLeave}
         />
       </>

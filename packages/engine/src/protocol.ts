@@ -41,12 +41,16 @@ export interface ClientToServerEvents {
   ) => void;
   'room:leave': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'room:start': (payload: { roomCode: string }, ack: (res: AckResponse<null>) => void) => void;
+  /** Host-only. Resets a finished match's room back to the lobby, keeping the room code and roster. */
+  'room:restart': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'game:peek': (payload: { slotIndices: [number, number] }, ack: (res: AckResponse<null>) => void) => void;
   'game:drawDraw': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'game:drawDiscard': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'game:swap': (payload: { slotIndex: number }, ack: (res: AckResponse<null>) => void) => void;
   'game:discard': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'game:nextHole': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Host-only. Ends the match immediately in any phase; an in-progress hole is discarded, not scored. */
+  'game:endMatch': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
 }
 
 export interface ServerToClientEvents {

@@ -168,8 +168,36 @@ input {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 1.5rem;
   font-size: 1.1rem;
+}
+
+.end-match-button {
+  background: none;
+  border: 1px solid var(--red);
+  color: #ffb4a8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+}
+
+.end-match-button:hover {
+  background: var(--red);
+  color: white;
+}
+
+.reveal-banner {
+  text-align: center;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.reveal-banner p {
+  margin: 0 0 0.6rem;
 }
 
 .opponents-row {

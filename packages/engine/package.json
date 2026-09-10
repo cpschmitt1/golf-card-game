@@ -1,0 +1,19 @@
+{
+  "name": "@golf/engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure game-logic engine for the Golf card game — no I/O, no framework.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --out-dir dist",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --out-dir dist --watch",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

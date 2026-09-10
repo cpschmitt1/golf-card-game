@@ -4,10 +4,11 @@ interface LobbyProps {
   lobby: LobbyView;
   playerId: string;
   onStart: () => void;
+  onLeave: () => void;
   error: string | null;
 }
 
-export function Lobby({ lobby, playerId, onStart, error }: LobbyProps) {
+export function Lobby({ lobby, playerId, onStart, onLeave, error }: LobbyProps) {
   const isHost = lobby.hostId === playerId;
   const canStart = lobby.players.length >= 2 && lobby.players.length <= 6;
 
@@ -39,6 +40,10 @@ export function Lobby({ lobby, playerId, onStart, error }: LobbyProps) {
       )}
 
       {error && <p className="error-text">{error}</p>}
+
+      <button className="link-button" onClick={onLeave}>
+        Leave room
+      </button>
     </div>
   );
 }

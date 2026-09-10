@@ -7,13 +7,15 @@ export interface StoredSession {
 }
 
 /**
- * Uses sessionStorage (not localStorage) on purpose: it survives a refresh/reload of the same
- * tab — exactly what reconnect needs — but is NOT shared across tabs, so opening multiple tabs
- * to play as multiple people (e.g. for local testing) still gives each tab its own identity.
+ * Uses localStorage: identity survives closing and reopening the tab, not just a refresh.
+ * This means it's shared across every tab/window on this browser for this origin — opening
+ * a second tab no longer gives you a second player, it just opens the same seat twice (the
+ * server evicts whichever tab connected first; see App.tsx's 'io server disconnect' handling).
+ * Testing multiple players locally now needs separate browsers or an incognito/private window.
  */
 export function loadSession(): StoredSession | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (typeof parsed?.roomCode === 'string' && typeof parsed?.playerId === 'string' && typeof parsed?.playerToken === 'string') {
@@ -27,15 +29,15 @@ export function loadSession(): StoredSession | null {
 
 export function saveSession(session: StoredSession): void {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } catch {
-    // sessionStorage unavailable (private mode, etc.) — reconnect-after-refresh just won't work.
+    // localStorage unavailable (private mode, etc.) — reconnect-after-refresh just won't work.
   }
 }
 
 export function clearSession(): void {
   try {
-    sessionStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
   } catch {
     // ignore
   }

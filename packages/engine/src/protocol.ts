@@ -39,6 +39,7 @@ export interface ClientToServerEvents {
     payload: { roomCode: string; playerId: string; playerToken: string },
     ack: (res: AckResponse<ResumedRoom>) => void,
   ) => void;
+  'room:leave': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'room:start': (payload: { roomCode: string }, ack: (res: AckResponse<null>) => void) => void;
   'game:peek': (payload: { slotIndices: [number, number] }, ack: (res: AckResponse<null>) => void) => void;
   'game:drawDraw': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;

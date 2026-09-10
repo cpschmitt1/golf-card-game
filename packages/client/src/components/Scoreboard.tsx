@@ -6,9 +6,10 @@ interface ScoreboardProps {
   matchComplete: boolean;
   isHost: boolean;
   onNextHole: () => void;
+  onLeave: () => void;
 }
 
-export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextHole }: ScoreboardProps) {
+export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextHole, onLeave }: ScoreboardProps) {
   const ranked = [...players].sort((a, b) => a.totalScore - b.totalScore);
 
   return (
@@ -41,6 +42,10 @@ export function Scoreboard({ players, holeNumber, matchComplete, isHost, onNextH
         {!matchComplete && isHost && <button onClick={onNextHole}>Start Hole {holeNumber + 1}</button>}
         {!matchComplete && !isHost && <p className="hint">Waiting for the host to start the next hole…</p>}
         {matchComplete && <p className="hint">18 holes complete — lowest score wins!</p>}
+
+        <button className="link-button" onClick={onLeave}>
+          Leave game
+        </button>
       </div>
     </div>
   );

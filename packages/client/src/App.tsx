@@ -39,8 +39,22 @@ export default function App() {
       });
     }
 
-    function handleDisconnect() {
+    function handleDisconnect(reason: string) {
       setSocketConnected(false);
+      // The server only force-disconnects a socket when a newer connection took over the same
+      // player identity (see bindSocketToPlayer's eviction in the server) — with localStorage,
+      // that now happens whenever this identity is opened in a second tab/window. socket.io does
+      // NOT auto-reconnect after a server-initiated disconnect, so recover explicitly: drop the
+      // stale identity, surface why, and manually reconnect as a fresh (anonymous) connection.
+      if (reason === 'io server disconnect') {
+        clearSession();
+        setPlayerId(null);
+        setRoomCode(null);
+        setLobby(null);
+        setGameState(null);
+        setError('This game was opened in another tab or window — only one can play as this seat.');
+        socket.connect();
+      }
     }
     function handleLobby(update: LobbyView) {
       setLobby(update);
@@ -113,6 +127,16 @@ export default function App() {
     if (!res.ok) setError(res.error);
   }
 
+  function handleLeave() {
+    clearSession();
+    socket.emit('room:leave', {}, () => {});
+    setPlayerId(null);
+    setRoomCode(null);
+    setLobby(null);
+    setGameState(null);
+    setError(null);
+  }
+
   const connectionBanner = !socketConnected && (lobby || gameState) && (
     <div className="connection-banner">Connection lost — reconnecting…</div>
   );
@@ -138,6 +162,7 @@ export default function App() {
           onSwap={(slotIndex) => socket.emit('game:swap', { slotIndex }, reportIfError)}
           onDiscard={() => socket.emit('game:discard', {}, reportIfError)}
           onNextHole={() => socket.emit('game:nextHole', {}, reportIfError)}
+          onLeave={handleLeave}
         />
       </>
     );
@@ -147,7 +172,7 @@ export default function App() {
     return (
       <>
         {connectionBanner}
-        <Lobby lobby={lobby} playerId={playerId} onStart={handleStart} error={error} />
+        <Lobby lobby={lobby} playerId={playerId} onStart={handleStart} onLeave={handleLeave} error={error} />
       </>
     );
   }

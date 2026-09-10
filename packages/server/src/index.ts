@@ -154,6 +154,27 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     });
   });
 
+  socket.on('room:leave', (_payload, callback) => {
+    ack(callback, () => {
+      const { roomCode, playerId } = socket.data;
+      if (roomCode && playerId) {
+        const room = rooms.get(roomCode);
+        // Only tear down the seat if this socket is still the one bound to it — if it was
+        // already evicted by a newer connection for the same player, leave that state alone.
+        if (room && room.socketByPlayerId.get(playerId) === socket.id) {
+          room.socketByPlayerId.delete(playerId);
+          setConnected(room, playerId, false);
+          rooms.reconcileEmptyTimer(room);
+          broadcastRoom(room);
+        }
+        socket.leave(playerId);
+      }
+      socket.data.playerId = undefined;
+      socket.data.roomCode = undefined;
+      return null;
+    });
+  });
+
   socket.on('room:start', ({ roomCode }, callback) => {
     ack(callback, () => {
       const room = requireRoom(roomCode);

@@ -26,7 +26,10 @@ This builds the engine once, then runs all three packages together:
 - Server — http://localhost:3001 (`tsx watch`, restarts on change)
 - Client — http://localhost:5173 (Vite, hot module reload)
 
-Open http://localhost:5173 in multiple browser tabs (or share your local network URL with friends) to test multiplayer — one tab creates a room and gets a 4-letter room code, the others join with that code.
+To test multiplayer locally, open http://localhost:5173 as **multiple separate browser profiles or
+incognito/private windows** (not just multiple tabs — see [Reconnecting mid-game](#reconnecting-mid-game)
+for why), or share your local network URL with friends on other machines. One window creates a room
+and gets a 4-letter room code, the others join with that code.
 
 The client talks to the server via `VITE_SERVER_URL` (defaults to `http://localhost:3001`); copy `packages/client/.env.example` to `.env` if you need to point it elsewhere.
 
@@ -41,25 +44,44 @@ npm test
 ## Reconnecting mid-game
 
 Player identity is decoupled from the socket connection: joining or creating a room issues a
-stable `playerId` plus a secret `playerToken`, stored in the browser's `sessionStorage` (survives
-a refresh of that tab, but each tab you open keeps its own identity — handy for local testing).
-If the tab reloads or the connection drops and comes back (flaky wifi), the client automatically
-sends that stored credential to the server via `room:reconnect`, which reattaches the same seat in
-the room's in-memory game state and sends back exactly where things stand — your grid, whose turn
-it is, the piles — not a fresh game.
+stable `playerId` plus a secret `playerToken`, stored in the browser's `localStorage`. If the tab
+reloads, is closed and reopened, or the connection drops and comes back (flaky wifi), the client
+automatically sends that stored credential to the server via `room:reconnect`, which reattaches
+the same seat in the room's in-memory game state and sends back exactly where things stand — your
+grid, whose turn it is, the piles — not a fresh game.
+
+**This identity is shared by every tab/window of the same browser profile**, since `localStorage`
+is per-origin, not per-tab (unlike `sessionStorage`). That's deliberate — it's what makes the seat
+survive closing and reopening a tab — but it means two tabs of the same browser can no longer play
+as two different people: opening a second tab just opens the same seat again. When that happens,
+the server evicts whichever connection was there first (`bindSocketToPlayer` in
+`packages/server/src/index.ts`), and the losing tab detects the forced disconnect (`reason === 'io
+server disconnect'`, which socket.io does *not* auto-reconnect from) and falls back to the home
+screen with an explanatory message instead of hanging. **To test multiple players locally, use
+separate browser profiles or incognito/private windows** — see "Running locally" above.
+
+A "Leave room" / "Leave game" link (lobby and scoreboard screens) clears the stored identity and
+tells the server to mark that seat disconnected, so you can walk away from a finished match or a
+room you joined by mistake without having to clear browser storage by hand.
 
 A room with zero connected players is kept in memory for 10 minutes (`ROOM_EMPTY_TTL_MS` in
 `packages/server/src/rooms.ts`) in case everyone reconnects; only after that does it get dropped.
 Restarting the *server* process still ends all games, by design — this only covers a player's
-connection dropping while the server keeps running.
+connection dropping (or leaving) while the server keeps running.
 
-**To test it yourself:** start a game with two browser tabs (see above), take a couple of turns,
-then just refresh one of the tabs. It should skip the home screen, briefly show "Resuming your
-game…", and land back in the game with that player's hand, the current turn, and the piles intact
-— check the other tab too, its "disconnected" badge on that player should clear once they're back.
-To simulate a real wifi drop instead of a refresh (without reloading the tab), open devtools and
-toggle the Network tab to Offline for a few seconds, then back to Online — socket.io will
-reconnect on its own and trigger the same flow.
+**To test reconnect-after-refresh yourself:** start a game (two windows, see above), take a couple
+of turns, then just refresh one of them. It should skip the home screen, briefly show "Resuming
+your game…", and land back in the game with that player's hand, the current turn, and the piles
+intact — check the other window too, its "disconnected" badge on that player should clear once
+they're back. Closing and reopening the tab (not just refreshing) works the same way now.
+
+**To test a real wifi drop** (without reloading): open devtools and toggle the Network tab to
+Offline for a few seconds, then back to Online — socket.io reconnects on its own and triggers the
+same flow.
+
+**To test the eviction/takeover path:** open the same window's URL in a second tab of the *same*
+browser (deliberately triggering the shared-identity case) — the second tab should take over the
+seat, and the first should immediately show "This game was opened in another tab or window."
 
 ## Known v1 limitations
 

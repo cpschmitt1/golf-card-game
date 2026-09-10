@@ -13,9 +13,10 @@ interface GameBoardProps {
   onSwap: (slotIndex: number) => void;
   onDiscard: () => void;
   onNextHole: () => void;
+  onLeave: () => void;
 }
 
-export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, onSwap, onDiscard, onNextHole }: GameBoardProps) {
+export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, onSwap, onDiscard, onNextHole, onLeave }: GameBoardProps) {
   const [selectedPeekSlots, setSelectedPeekSlots] = useState<number[]>([]);
 
   const me = state.players.find((p) => p.id === playerId);
@@ -127,7 +128,14 @@ export function GameBoard({ state, playerId, onPeek, onDrawDraw, onDrawDiscard, 
       </section>
 
       {state.phase === 'complete' && (
-        <Scoreboard players={state.players} holeNumber={state.holeNumber} matchComplete={state.matchComplete} isHost={isHost} onNextHole={onNextHole} />
+        <Scoreboard
+          players={state.players}
+          holeNumber={state.holeNumber}
+          matchComplete={state.matchComplete}
+          isHost={isHost}
+          onNextHole={onNextHole}
+          onLeave={onLeave}
+        />
       )}
     </div>
   );

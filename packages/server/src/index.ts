@@ -112,7 +112,6 @@ function bindSocketToPlayer(
   socket.join(playerId);
 
   setConnected(room, playerId, true);
-  rooms.reconcileEmptyTimer(room);
 }
 
 function broadcastRoom(room: RoomRecord): void {
@@ -170,7 +169,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         if (room && room.socketByPlayerId.get(playerId) === socket.id) {
           room.socketByPlayerId.delete(playerId);
           setConnected(room, playerId, false);
-          rooms.reconcileEmptyTimer(room);
           broadcastRoom(room);
         }
         socket.leave(playerId);
@@ -292,7 +290,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
     room.socketByPlayerId.delete(playerId);
     setConnected(room, playerId, false);
-    rooms.reconcileEmptyTimer(room);
     broadcastRoom(room);
   });
 });

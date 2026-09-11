@@ -64,10 +64,12 @@ A "Leave room" / "Leave game" link (lobby and scoreboard screens) clears the sto
 tells the server to mark that seat disconnected, so you can walk away from a finished match or a
 room you joined by mistake without having to clear browser storage by hand.
 
-A room with zero connected players is kept in memory for 10 minutes (`ROOM_EMPTY_TTL_MS` in
-`packages/server/src/rooms.ts`) in case everyone reconnects; only after that does it get dropped.
-Restarting the *server* process still ends all games, by design — this only covers a player's
-connection dropping (or leaving) while the server keeps running.
+A room is never auto-expired for being idle or having zero connected players — it lives for as
+long as the server process runs, no matter how long everyone's been away. This is deliberate: the
+game is meant to be played asynchronously by people in different time zones, with real gaps of
+hours or days between turns, so there's no "safe" timeout short enough to avoid risking a game
+someone fully intends to finish. Restarting the *server* process still ends all games, by design —
+that's the only thing that clears rooms out, same as always.
 
 **To test reconnect-after-refresh yourself:** start a game (two windows, see above), take a couple
 of turns, then just refresh one of them. It should skip the home screen, briefly show "Resuming
@@ -114,6 +116,10 @@ The host has two controls, both host-only and both visible in `GameBoard`'s head
 - Single server instance only — game state lives in that one process's memory, so this can't be
   scaled to multiple replicas without adding a shared store (e.g. Redis) for room state and the
   Socket.IO adapter. Fine for a friends game; don't bump Railway's replica count above 1.
+- Rooms never auto-expire (see above), so a server that runs for a very long time without
+  restarting would accumulate abandoned rooms indefinitely. Not a real concern at friends-game
+  scale — each room is a few KB at most — but worth knowing if this URL ever left a small trusted
+  group.
 
 ## Deploying to Railway
 

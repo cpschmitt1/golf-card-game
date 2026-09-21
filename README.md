@@ -1,4 +1,4 @@
-# Golf — Online
+# Golf Card Game
 
 A real-time, browser-based version of the Golf card game for 2-6 players, playing a full 18-hole match.
 

@@ -166,7 +166,7 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
   if (previous.phase !== 'peek' && next.phase === 'peek') {
     for (const player of next.players) {
       pushUnlessFocused(room, player.id, {
-        title: 'Golf — Online',
+        title: 'Golf Card Game',
         body: `Hole ${next.holeNumber} has started — time to peek!`,
       });
     }
@@ -180,7 +180,7 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
 
   if (isActiveTurn && nextCurrentId && nextCurrentId !== previousCurrentId) {
     pushUnlessFocused(room, nextCurrentId, {
-      title: 'Golf — Online',
+      title: 'Golf Card Game',
       body: `It's your turn — Hole ${next.holeNumber} of 18`,
     });
   }

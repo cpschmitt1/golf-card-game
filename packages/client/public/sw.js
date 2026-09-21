@@ -10,7 +10,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Golf — Online', body: 'Something happened in your game.' };
+  let payload = { title: 'Golf Card Game', body: 'Something happened in your game.' };
   try {
     if (event.data) payload = event.data.json();
   } catch {

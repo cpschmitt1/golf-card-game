@@ -10,6 +10,10 @@ export interface RoomRecord {
   playerTokens: Map<string, string>;
   /** playerId -> the socket currently bound to them, so a reconnect can evict a stale old one. */
   socketByPlayerId: Map<string, string>;
+  /** playerId -> whether their tab is currently focused/visible, reported by the client. Missing
+   *  or false means "send them a push notification if it's their turn"; only an explicit `true`
+   *  suppresses one — see presence:focus in index.ts. */
+  focusedByPlayerId: Map<string, boolean>;
 }
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
@@ -45,6 +49,7 @@ export class RoomStore {
       gameState: null,
       playerTokens: new Map([[playerId, token]]),
       socketByPlayerId: new Map(),
+      focusedByPlayerId: new Map(),
     };
     this.rooms.set(code, room);
     return { room, playerId, token };

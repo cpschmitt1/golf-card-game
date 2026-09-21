@@ -2,6 +2,8 @@ import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import { createServer } from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Server, type Socket } from 'socket.io';
 
 import {
@@ -22,18 +24,39 @@ import {
 } from '@golf/engine';
 
 import { RoomStore, type RoomRecord } from './rooms.js';
+import { savePushSubscription } from './pushSubscriptions.js';
+import { sendPushToPlayer, type PushPayload } from './pushSend.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 // Comma-separated so a custom domain can be added alongside a platform-provided one
 // (e.g. Railway's *.up.railway.app domain) without needing a code change to redeploy.
-const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+// A literal "*" allows any origin — only meant for local testing against a throwaway tunnel
+// URL that changes on every restart; never set this in a real deployment.
+const CLIENT_ORIGIN_ENV = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
+const CLIENT_ORIGINS: true | string[] =
+  CLIENT_ORIGIN_ENV.trim() === '*'
+    ? true
+    : CLIENT_ORIGIN_ENV.split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean);
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGINS }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// Local testing only, opt-in via env var: serves the already-built client from this same
+// process/port, so a single tunnel (e.g. a free ngrok account's one-simultaneous-tunnel limit)
+// can expose the whole app instead of needing two kept in sync. Never set this on Railway —
+// client and server are separate services there for real.
+if (process.env.SERVE_CLIENT_DIST === 'true') {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/socket.io/')) return next();
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
@@ -120,6 +143,49 @@ function broadcastRoom(room: RoomRecord): void {
   else broadcastLobby(room);
 }
 
+/** Sends a push notification to a player, unless they're currently looking at their own tab. */
+function pushUnlessFocused(room: RoomRecord, playerId: string, payload: PushPayload): void {
+  if (room.focusedByPlayerId.get(playerId) === true) return;
+  void sendPushToPlayer(playerId, payload);
+}
+
+/**
+ * Compares the state before and after a game action to decide whether anyone needs a "come back"
+ * push notification. Call this right after applying an action, with `previous` being the state
+ * as it was *before* that action (every handler already has this in scope as `state`, captured
+ * before mutating room.gameState).
+ *
+ * Two triggers, both blocking-until-actioned so there's no risk of double-firing before someone
+ * responds: a new hole starting (everyone needs to peek) and a new current player's turn
+ * starting (during 'turn' or 'final-turns', including the peek->turn handoff).
+ */
+function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
+  const next = room.gameState;
+  if (!next) return;
+
+  if (previous.phase !== 'peek' && next.phase === 'peek') {
+    for (const player of next.players) {
+      pushUnlessFocused(room, player.id, {
+        title: 'Golf — Online',
+        body: `Hole ${next.holeNumber} has started — time to peek!`,
+      });
+    }
+    return;
+  }
+
+  const wasActiveTurn = previous.phase === 'turn' || previous.phase === 'final-turns';
+  const isActiveTurn = next.phase === 'turn' || next.phase === 'final-turns';
+  const previousCurrentId = wasActiveTurn ? previous.players[previous.currentPlayerIndex]?.id : null;
+  const nextCurrentId = isActiveTurn ? next.players[next.currentPlayerIndex]?.id : null;
+
+  if (isActiveTurn && nextCurrentId && nextCurrentId !== previousCurrentId) {
+    pushUnlessFocused(room, nextCurrentId, {
+      title: 'Golf — Online',
+      body: `It's your turn — Hole ${next.holeNumber} of 18`,
+    });
+  }
+}
+
 io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>) => {
   socket.on('room:create', ({ playerName }, callback) => {
     ack(callback, () => {
@@ -169,6 +235,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         // already evicted by a newer connection for the same player, leave that state alone.
         if (room && room.socketByPlayerId.get(playerId) === socket.id) {
           room.socketByPlayerId.delete(playerId);
+          room.focusedByPlayerId.delete(playerId);
           setConnected(room, playerId, false);
           broadcastRoom(room);
         }
@@ -188,6 +255,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const match = createMatch(room.code, room.hostId, room.lobbyPlayers);
       room.gameState = dealHole(match);
       broadcastGameState(room.gameState);
+      notifyOnStateChange(match, room);
       return null;
     });
   });
@@ -213,6 +281,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const state = requireGameState(room);
       room.gameState = choosePeek(state, requirePlayerId(socket), slotIndices);
       broadcastGameState(room.gameState);
+      notifyOnStateChange(state, room);
       return null;
     });
   });
@@ -243,6 +312,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const state = requireGameState(room);
       room.gameState = swapCard(state, requirePlayerId(socket), slotIndex);
       broadcastGameState(room.gameState);
+      notifyOnStateChange(state, room);
       return null;
     });
   });
@@ -253,6 +323,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const state = requireGameState(room);
       room.gameState = discardDrawn(state, requirePlayerId(socket));
       broadcastGameState(room.gameState);
+      notifyOnStateChange(state, room);
       return null;
     });
   });
@@ -264,6 +335,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can start the next hole.');
       room.gameState = dealHole(state);
       broadcastGameState(room.gameState);
+      notifyOnStateChange(state, room);
       return null;
     });
   });
@@ -279,6 +351,25 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     });
   });
 
+  socket.on('push:subscribe', ({ subscription }, callback) => {
+    ack(callback, () => {
+      const playerId = requirePlayerId(socket);
+      // Fire-and-forget: a slow/failed Upstash write shouldn't block the client's ack, and
+      // savePushSubscription never throws (it just logs and no-ops if Upstash isn't configured).
+      void savePushSubscription(playerId, subscription);
+      return null;
+    });
+  });
+
+  socket.on('presence:focus', ({ focused }, callback) => {
+    ack(callback, () => {
+      const room = requireRoom(socket.data.roomCode);
+      const playerId = requirePlayerId(socket);
+      room.focusedByPlayerId.set(playerId, focused);
+      return null;
+    });
+  });
+
   socket.on('disconnect', () => {
     const { roomCode, playerId } = socket.data;
     if (!roomCode || !playerId) return;
@@ -290,6 +381,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     if (room.socketByPlayerId.get(playerId) !== socket.id) return;
 
     room.socketByPlayerId.delete(playerId);
+    room.focusedByPlayerId.delete(playerId);
     setConnected(room, playerId, false);
     broadcastRoom(room);
   });

@@ -6,9 +6,11 @@ interface LobbyProps {
   onStart: () => void;
   onLeave: () => void;
   error: string | null;
+  notificationPermission: NotificationPermission | 'unsupported';
+  onEnableNotifications: () => void;
 }
 
-export function Lobby({ lobby, playerId, onStart, onLeave, error }: LobbyProps) {
+export function Lobby({ lobby, playerId, onStart, onLeave, error, notificationPermission, onEnableNotifications }: LobbyProps) {
   const isHost = lobby.hostId === playerId;
   const canStart = lobby.players.length >= 2 && lobby.players.length <= 6;
 
@@ -27,6 +29,13 @@ export function Lobby({ lobby, playerId, onStart, onLeave, error }: LobbyProps) 
           </li>
         ))}
       </ul>
+
+      {notificationPermission === 'default' && (
+        <div className="notification-banner">
+          <p>🔔 Get notified when it's your turn — even if the game isn't open.</p>
+          <button onClick={onEnableNotifications}>Enable notifications</button>
+        </div>
+      )}
 
       {isHost ? (
         <>

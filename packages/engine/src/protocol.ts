@@ -32,6 +32,15 @@ export interface ResumedRoom {
   gameState: GameStateView | null;
 }
 
+/** The shape browsers return from PushManager.subscribe() — also what's stored server-side. */
+export interface PushSubscriptionData {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
 export interface ClientToServerEvents {
   'room:create': (payload: { playerName: string }, ack: (res: AckResponse<JoinedRoom>) => void) => void;
   'room:join': (payload: { roomCode: string; playerName: string }, ack: (res: AckResponse<JoinedRoom>) => void) => void;
@@ -51,6 +60,11 @@ export interface ClientToServerEvents {
   'game:nextHole': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Host-only. Ends the match immediately in any phase; an in-progress hole is discarded, not scored. */
   'game:endMatch': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Registers (or re-registers) this player's push subscription. Safe to call repeatedly. */
+  'push:subscribe': (payload: { subscription: PushSubscriptionData }, ack: (res: AckResponse<null>) => void) => void;
+  /** Reports whether this player's tab is currently focused/visible, so the server can skip
+   *  sending a push notification when they're already looking at the game. */
+  'presence:focus': (payload: { focused: boolean }, ack: (res: AckResponse<null>) => void) => void;
 }
 
 export interface ServerToClientEvents {

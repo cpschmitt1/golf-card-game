@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { GameStateView, LobbyView } from '@golf/engine';
 import { socket } from './socket.js';
 import { clearSession, loadSession, saveSession } from './session.js';
+import { getOrCreatePushSubscription, isPushSupported } from './push.js';
 import { Home } from './components/Home.js';
 import { Lobby } from './components/Lobby.js';
 import { GameBoard } from './components/GameBoard.js';
@@ -15,6 +16,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [reconnecting, setReconnecting] = useState(() => loadSession() !== null);
   const [socketConnected, setSocketConnected] = useState(socket.connected);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    isPushSupported() ? Notification.permission : 'unsupported',
+  );
 
   useEffect(() => {
     function attemptResume() {
@@ -89,6 +93,55 @@ export default function App() {
       socket.off('error', handleError);
     };
   }, []);
+
+  // Reports whether this tab is focused/visible so the server can skip sending a push
+  // notification when the player is already looking at the game (see notifyOnStateChange on
+  // the server). Only meaningful once we're actually in a room.
+  useEffect(() => {
+    if (!playerId) return;
+
+    function reportFocus() {
+      const focused = document.visibilityState === 'visible' && document.hasFocus();
+      socket.emit('presence:focus', { focused }, () => {});
+    }
+
+    reportFocus();
+    window.addEventListener('focus', reportFocus);
+    window.addEventListener('blur', reportFocus);
+    document.addEventListener('visibilitychange', reportFocus);
+
+    return () => {
+      window.removeEventListener('focus', reportFocus);
+      window.removeEventListener('blur', reportFocus);
+      document.removeEventListener('visibilitychange', reportFocus);
+    };
+  }, [playerId]);
+
+  // Registers (or re-registers) this browser's push subscription against whichever room-scoped
+  // playerId is currently active — silent and instant when permission is already granted, since
+  // getOrCreatePushSubscription reuses the existing subscription rather than prompting again.
+  // Runs on every room entry (create/join/reconnect) and whenever permission is freshly granted
+  // via the lobby banner, since a fresh playerId needs its own registration even though the
+  // underlying browser subscription doesn't change.
+  useEffect(() => {
+    if (!playerId || notificationPermission !== 'granted') return;
+    let cancelled = false;
+    (async () => {
+      const subscription = await getOrCreatePushSubscription();
+      if (subscription && !cancelled) {
+        socket.emit('push:subscribe', { subscription }, () => {});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId, notificationPermission]);
+
+  async function handleEnableNotifications() {
+    if (!isPushSupported()) return;
+    const result = await Notification.requestPermission();
+    setNotificationPermission(result);
+  }
 
   function handleCreate(playerName: string) {
     setBusy(true);
@@ -179,7 +232,15 @@ export default function App() {
     return (
       <>
         {connectionBanner}
-        <Lobby lobby={lobby} playerId={playerId} onStart={handleStart} onLeave={handleLeave} error={error} />
+        <Lobby
+          lobby={lobby}
+          playerId={playerId}
+          onStart={handleStart}
+          onLeave={handleLeave}
+          error={error}
+          notificationPermission={notificationPermission}
+          onEnableNotifications={handleEnableNotifications}
+        />
       </>
     );
   }

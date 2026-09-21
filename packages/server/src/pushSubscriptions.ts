@@ -1,12 +1,5 @@
 import { Redis } from '@upstash/redis';
-
-export interface PushSubscriptionRecord {
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
-}
+import type { PushSubscriptionData } from '@golf/engine';
 
 let client: Redis | null = null;
 let warnedMissingConfig = false;
@@ -39,17 +32,17 @@ function key(playerId: string): string {
 }
 
 /** Stores (or overwrites) a player's push subscription. No-op if Upstash isn't configured. */
-export async function savePushSubscription(playerId: string, subscription: PushSubscriptionRecord): Promise<void> {
+export async function savePushSubscription(playerId: string, subscription: PushSubscriptionData): Promise<void> {
   const redis = getClient();
   if (!redis) return;
   await redis.set(key(playerId), subscription);
 }
 
 /** Returns null if the player has no stored subscription, or if Upstash isn't configured. */
-export async function getPushSubscription(playerId: string): Promise<PushSubscriptionRecord | null> {
+export async function getPushSubscription(playerId: string): Promise<PushSubscriptionData | null> {
   const redis = getClient();
   if (!redis) return null;
-  const record = await redis.get<PushSubscriptionRecord>(key(playerId));
+  const record = await redis.get<PushSubscriptionData>(key(playerId));
   return record ?? null;
 }
 

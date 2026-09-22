@@ -94,15 +94,24 @@ export default function App() {
     };
   }, []);
 
+  // Clears the home-screen app badge as soon as the page loads — covers opening the app from
+  // its icon directly (not via tapping the notification, which already clears it itself in
+  // sw.js's notificationclick handler).
+  useEffect(() => {
+    if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+  }, []);
+
   // Reports whether this tab is focused/visible so the server can skip sending a push
   // notification when the player is already looking at the game (see notifyOnStateChange on
-  // the server). Only meaningful once we're actually in a room.
+  // the server). Only meaningful once we're actually in a room. Also clears the app badge on
+  // regaining focus, for the backgrounded-then-refocused case within the same page load.
   useEffect(() => {
     if (!playerId) return;
 
     function reportFocus() {
       const focused = document.visibilityState === 'visible' && document.hasFocus();
       socket.emit('presence:focus', { focused }, () => {});
+      if (focused && 'clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
     }
 
     reportFocus();

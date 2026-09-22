@@ -18,17 +18,31 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      tag: 'golf-notification',
-    }),
+    (async () => {
+      await self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: 'golf-notification',
+      });
+      // No count argument — renders as a plain dot/circle rather than a number. Requires
+      // notification permission to already be granted (it silently no-ops otherwise), which is
+      // exactly the case whenever we get this far anyway. Supported on iOS 16.4+ for a PWA
+      // installed to the home screen; harmlessly does nothing on platforms that don't support it.
+      if ('setAppBadge' in navigator) {
+        try {
+          await navigator.setAppBadge();
+        } catch {
+          // Not fatal — the notification itself already went out above.
+        }
+      }
+    })(),
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {

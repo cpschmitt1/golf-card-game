@@ -206,6 +206,12 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const { playerId, token } = rooms.join(room, name);
       bindSocketToPlayer(socket, room, playerId);
       broadcastLobby(room);
+      // Only for a genuinely new player joining, not room:reconnect — an existing player coming
+      // back isn't news to the host the way a new arrival is.
+      pushUnlessFocused(room, room.hostId, {
+        title: 'Golf Card Game',
+        body: `${name} joined your room!`,
+      });
       return { roomCode: room.code, playerId, playerToken: token };
     });
   });

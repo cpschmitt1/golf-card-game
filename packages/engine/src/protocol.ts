@@ -52,6 +52,8 @@ export interface ClientToServerEvents {
   'room:start': (payload: { roomCode: string }, ack: (res: AckResponse<null>) => void) => void;
   /** Host-only. Resets a finished match's room back to the lobby, keeping the room code and roster. */
   'room:restart': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Host-only, lobby only. Removes a player from the room — e.g. to clear a duplicate join. */
+  'room:kickPlayer': (payload: { playerId: string }, ack: (res: AckResponse<null>) => void) => void;
   'game:peek': (payload: { slotIndices: [number, number] }, ack: (res: AckResponse<null>) => void) => void;
   'game:drawDraw': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   'game:drawDiscard': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
@@ -71,4 +73,6 @@ export interface ServerToClientEvents {
   'lobby:update': (lobby: LobbyView) => void;
   'game:state': (state: GameStateView) => void;
   'error': (err: { message: string }) => void;
+  /** Sent to a player the host just removed from the lobby, in place of a lobby:update. */
+  'room:kicked': (payload: { roomCode: string }) => void;
 }

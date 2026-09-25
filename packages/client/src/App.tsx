@@ -74,12 +74,21 @@ export default function App() {
     function handleError(err: { message: string }) {
       setError(err.message);
     }
+    function handleKicked() {
+      clearSession();
+      setPlayerId(null);
+      setRoomCode(null);
+      setLobby(null);
+      setGameState(null);
+      setError('The host removed you from the room.');
+    }
 
     socket.on('connect', attemptResume);
     socket.on('disconnect', handleDisconnect);
     socket.on('lobby:update', handleLobby);
     socket.on('game:state', handleGameState);
     socket.on('error', handleError);
+    socket.on('room:kicked', handleKicked);
 
     // The socket may have already connected before this effect ran (e.g. on a fast reload),
     // in which case the 'connect' event above already fired and won't fire again.
@@ -91,6 +100,7 @@ export default function App() {
       socket.off('lobby:update', handleLobby);
       socket.off('game:state', handleGameState);
       socket.off('error', handleError);
+      socket.off('room:kicked', handleKicked);
     };
   }, []);
 
@@ -194,6 +204,11 @@ export default function App() {
     if (!res.ok) setError(res.error);
   }
 
+  function handleKickPlayer(targetPlayerId: string) {
+    setError(null);
+    socket.emit('room:kickPlayer', { playerId: targetPlayerId }, reportIfError);
+  }
+
   function handleLeave() {
     clearSession();
     socket.emit('room:leave', {}, () => {});
@@ -249,6 +264,7 @@ export default function App() {
           error={error}
           notificationPermission={notificationPermission}
           onEnableNotifications={handleEnableNotifications}
+          onKickPlayer={handleKickPlayer}
         />
       </>
     );

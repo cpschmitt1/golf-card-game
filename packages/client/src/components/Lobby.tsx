@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { LobbyView } from '@golf/engine';
 
 interface LobbyProps {
@@ -8,11 +9,24 @@ interface LobbyProps {
   error: string | null;
   notificationPermission: NotificationPermission | 'unsupported';
   onEnableNotifications: () => void;
+  onKickPlayer: (playerId: string) => void;
 }
 
-export function Lobby({ lobby, playerId, onStart, onLeave, error, notificationPermission, onEnableNotifications }: LobbyProps) {
+export function Lobby({
+  lobby,
+  playerId,
+  onStart,
+  onLeave,
+  error,
+  notificationPermission,
+  onEnableNotifications,
+  onKickPlayer,
+}: LobbyProps) {
   const isHost = lobby.hostId === playerId;
   const canStart = lobby.players.length >= 2 && lobby.players.length <= 6;
+  // Two-tap confirm instead of window.confirm(): the latter renders inconsistently (or not at
+  // all) inside an installed iOS PWA, so removal is confirmed in-line instead.
+  const [pendingKickId, setPendingKickId] = useState<string | null>(null);
 
   return (
     <div className="screen lobby-screen">
@@ -26,6 +40,28 @@ export function Lobby({ lobby, playerId, onStart, onLeave, error, notificationPe
             {p.id === lobby.hostId && <span className="badge">host</span>}
             {p.id === playerId && <span className="badge badge-you">you</span>}
             {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
+            {isHost &&
+              p.id !== lobby.hostId &&
+              (pendingKickId === p.id ? (
+                <span className="kick-confirm">
+                  <button
+                    className="kick-confirm-yes"
+                    onClick={() => {
+                      setPendingKickId(null);
+                      onKickPlayer(p.id);
+                    }}
+                  >
+                    Remove?
+                  </button>
+                  <button className="link-button" onClick={() => setPendingKickId(null)}>
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button className="kick-button" title={`Remove ${p.name}`} onClick={() => setPendingKickId(p.id)}>
+                  ✕
+                </button>
+              ))}
           </li>
         ))}
       </ul>

@@ -281,6 +281,40 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     });
   });
 
+  socket.on('room:kickPlayer', ({ playerId: targetId }, callback) => {
+    ack(callback, () => {
+      const room = requireRoom(socket.data.roomCode);
+      const hostId = requirePlayerId(socket);
+      if (room.hostId !== hostId) throw new GolfEngineError('NOT_HOST', 'Only the host can remove players.');
+      if (room.gameState) throw new GolfEngineError('ALREADY_STARTED', 'Players can only be removed before the game starts.');
+      if (targetId === hostId) throw new GolfEngineError('CANNOT_KICK_HOST', 'The host cannot remove themselves.');
+      if (!room.lobbyPlayers.some((p) => p.id === targetId)) {
+        throw new GolfEngineError('PLAYER_NOT_FOUND', 'That player is no longer in the room.');
+      }
+
+      room.lobbyPlayers = room.lobbyPlayers.filter((p) => p.id !== targetId);
+      room.playerTokens.delete(targetId);
+      const targetSocketId = room.socketByPlayerId.get(targetId);
+      room.socketByPlayerId.delete(targetId);
+      room.focusedByPlayerId.delete(targetId);
+
+      // Tell the removed player directly, then detach their socket from the room so any further
+      // action they send fails with NOT_IN_ROOM — same end state as if they'd left voluntarily.
+      // No forced socket.disconnect() here: that would also fire the client's 'disconnect'
+      // handler, which shows a different ("opened in another tab") message and would stomp this one.
+      io.to(targetId).emit('room:kicked', { roomCode: room.code });
+      const targetSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : undefined;
+      if (targetSocket) {
+        targetSocket.leave(targetId);
+        targetSocket.data.playerId = undefined;
+        targetSocket.data.roomCode = undefined;
+      }
+
+      broadcastLobby(room);
+      return null;
+    });
+  });
+
   socket.on('game:peek', ({ slotIndices }, callback) => {
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);

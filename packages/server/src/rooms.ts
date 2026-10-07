@@ -14,6 +14,8 @@ export interface RoomRecord {
    *  or false means "send them a push notification if it's their turn"; only an explicit `true`
    *  suppresses one — see presence:focus in index.ts. */
   focusedByPlayerId: Map<string, boolean>;
+  /** targetPlayerId -> when they were last nudged (epoch ms), for the nudge cooldown. */
+  lastNudgeAtByTarget: Map<string, number>;
 }
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
@@ -50,6 +52,7 @@ export class RoomStore {
       playerTokens: new Map([[playerId, token]]),
       socketByPlayerId: new Map(),
       focusedByPlayerId: new Map(),
+      lastNudgeAtByTarget: new Map(),
     };
     this.rooms.set(code, room);
     return { room, playerId, token };

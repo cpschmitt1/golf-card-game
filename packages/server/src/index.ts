@@ -24,7 +24,7 @@ import {
 } from '@golf/engine';
 
 import { RoomStore, type RoomRecord } from './rooms.js';
-import { savePushSubscription } from './pushSubscriptions.js';
+import { getPushSubscription, savePushSubscription } from './pushSubscriptions.js';
 import { sendPushToPlayer, type PushPayload } from './pushSend.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -149,6 +149,15 @@ function pushUnlessFocused(room: RoomRecord, playerId: string, payload: PushPayl
   void sendPushToPlayer(playerId, payload);
 }
 
+/** The "it's your turn" text, shared by the automatic notification and the manual nudge. */
+function turnMessage(state: GameState): string {
+  return state.phase === 'final-turns'
+    ? `It's your final turn! — Hole ${state.holeNumber} of 18`
+    : `It's your turn — Hole ${state.holeNumber} of 18`;
+}
+
+const NUDGE_COOLDOWN_MS = 30 * 60 * 1000;
+
 /**
  * Compares the state before and after a game action to decide whether anyone needs a "come back"
  * push notification. Call this right after applying an action, with `previous` being the state
@@ -194,10 +203,7 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
   if (isActiveTurn && nextCurrentId && nextCurrentId !== previousCurrentId) {
     pushUnlessFocused(room, nextCurrentId, {
       title: 'Golf Card Game',
-      body:
-        next.phase === 'final-turns'
-          ? `It's your final turn! — Hole ${next.holeNumber} of 18`
-          : `It's your turn — Hole ${next.holeNumber} of 18`,
+      body: turnMessage(next),
     });
   }
 }
@@ -405,6 +411,61 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       broadcastGameState(room.gameState);
       return null;
     });
+  });
+
+  // Not built on ack() because it has to await a subscription lookup before deciding whether the
+  // nudge can actually reach anyone.
+  socket.on('game:nudge', async (_payload, callback) => {
+    let claimed: { room: RoomRecord; targetId: string; previous: number | undefined } | null = null;
+    try {
+      const room = requireRoom(socket.data.roomCode);
+      const state = requireGameState(room);
+      const nudgerId = requirePlayerId(socket);
+      if (state.phase !== 'turn' && state.phase !== 'final-turns') {
+        throw new GolfEngineError('NOT_IN_TURNS', 'Nudging only works while turns are being played.');
+      }
+      const target = state.players[state.currentPlayerIndex];
+      if (!target || target.id === nudgerId) throw new GolfEngineError('OWN_TURN', "It's your own turn.");
+      const nudger = state.players.find((p) => p.id === nudgerId);
+
+      const previous = room.lastNudgeAtByTarget.get(target.id);
+      const waitMs = previous === undefined ? 0 : previous + NUDGE_COOLDOWN_MS - Date.now();
+      if (waitMs > 0) {
+        throw new GolfEngineError(
+          'NUDGE_COOLDOWN',
+          `${target.name} was nudged recently — you can nudge again in ${Math.ceil(waitMs / 60000)} min.`,
+        );
+      }
+      // Claim the cooldown before awaiting so two simultaneous nudges can't both get through.
+      room.lastNudgeAtByTarget.set(target.id, Date.now());
+      claimed = { room, targetId: target.id, previous };
+
+      if (!(await getPushSubscription(target.id))) {
+        throw new GolfEngineError(
+          'NO_NOTIFICATIONS',
+          `${target.name} hasn't turned on notifications, so a nudge can't reach them.`,
+        );
+      }
+      // The turn may have moved on while we were checking the subscription.
+      const latest = room.gameState;
+      if (!latest || latest.players[latest.currentPlayerIndex]?.id !== target.id) {
+        throw new GolfEngineError('TURN_MOVED', `It's no longer ${target.name}'s turn.`);
+      }
+
+      claimed = null;
+      pushUnlessFocused(room, target.id, {
+        title: 'Golf Card Game',
+        body: `Nudge from ${nudger?.name ?? 'a player'}: ${turnMessage(latest)}`,
+      });
+      callback({ ok: true, data: null });
+    } catch (err) {
+      if (claimed) {
+        // The nudge never went out, so don't burn the cooldown.
+        if (claimed.previous === undefined) claimed.room.lastNudgeAtByTarget.delete(claimed.targetId);
+        else claimed.room.lastNudgeAtByTarget.set(claimed.targetId, claimed.previous);
+      }
+      callback({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+    }
   });
 
   socket.on('push:subscribe', ({ subscription }, callback) => {

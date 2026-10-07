@@ -217,6 +217,20 @@ input {
   font-size: 1.1rem;
 }
 
+.nudge-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.nudge-button {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.8rem;
+}
+
 .final-round-note {
   font-size: 0.8rem;
   opacity: 0.8;

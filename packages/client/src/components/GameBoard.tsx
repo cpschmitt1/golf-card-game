@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { GameStateView } from '@golf/engine';
+import type { AckResponse, GameStateView } from '@golf/engine';
 import { CardView } from './CardView.js';
 import { PlayerGridView } from './PlayerGridView.js';
 
@@ -11,6 +11,7 @@ interface GameBoardProps {
   onDrawDiscard: () => void;
   onSwap: (slotIndex: number) => void;
   onDiscard: () => void;
+  onNudge: (done: (res: AckResponse<null>) => void) => void;
   onNextHole: () => void;
   onEndMatch: () => void;
   onPlayAgain: () => void;
@@ -25,12 +26,14 @@ export function GameBoard({
   onDrawDiscard,
   onSwap,
   onDiscard,
+  onNudge,
   onNextHole,
   onEndMatch,
   onPlayAgain,
   onLeave,
 }: GameBoardProps) {
   const [selectedPeekSlots, setSelectedPeekSlots] = useState<number[]>([]);
+  const [nudge, setNudge] = useState<{ sent: boolean; message: string } | null>(null);
 
   const me = state.players.find((p) => p.id === playerId);
   const others = state.players.filter((p) => p.id !== playerId);
@@ -58,6 +61,11 @@ export function GameBoard({
   useEffect(() => {
     setSelectedPeekSlots([]);
   }, [amAwaitingPeek, state.holeNumber]);
+
+  // A nudge result only describes whoever was up when it was sent.
+  useEffect(() => {
+    setNudge(null);
+  }, [state.currentPlayerId]);
 
   // Swaps the page background to red for the final round (see body.final-round in styles.css);
   // the cleanup also covers leaving the game or the hole ending, which both unmount/change phase.
@@ -92,6 +100,11 @@ export function GameBoard({
 
   const currentPlayerName = state.players.find((p) => p.id === state.currentPlayerId)?.name ?? '';
   const finisherName = state.players.find((p) => p.id === state.finisherId)?.name ?? '';
+  const canNudge = !isMyTurn && !!state.currentPlayerId && (state.phase === 'turn' || state.phase === 'final-turns');
+
+  function handleNudge() {
+    onNudge((res) => setNudge(res.ok ? { sent: true, message: `Nudge sent to ${currentPlayerName}.` } : { sent: false, message: res.error }));
+  }
 
   return (
     <div className="screen game-screen">
@@ -127,6 +140,15 @@ export function GameBoard({
           </button>
         )}
       </header>
+
+      {canNudge && (
+        <div className="nudge-row">
+          <button className="nudge-button" disabled={nudge?.sent === true} onClick={handleNudge}>
+            👋 Nudge {currentPlayerName}
+          </button>
+          {nudge && <span className={nudge.sent ? 'hint' : 'error-text'}>{nudge.message}</span>}
+        </div>
+      )}
 
       <section className="opponents-row">
         {others.map((p) => (

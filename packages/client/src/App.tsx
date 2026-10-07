@@ -243,6 +243,7 @@ export default function App() {
           onDrawDiscard={() => socket.emit('game:drawDiscard', {}, reportIfError)}
           onSwap={(slotIndex) => socket.emit('game:swap', { slotIndex }, reportIfError)}
           onDiscard={() => socket.emit('game:discard', {}, reportIfError)}
+          onNudge={(done) => socket.emit('game:nudge', {}, done)}
           onNextHole={() => socket.emit('game:nextHole', {}, reportIfError)}
           onEndMatch={() => socket.emit('game:endMatch', {}, reportIfError)}
           onPlayAgain={() => socket.emit('room:restart', {}, reportIfError)}

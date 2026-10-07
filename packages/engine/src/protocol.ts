@@ -62,6 +62,8 @@ export interface ClientToServerEvents {
   'game:nextHole': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Host-only. Ends the match immediately in any phase; an in-progress hole is discarded, not scored. */
   'game:endMatch': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Sends the player whose turn it is a reminder push. Rate-limited per target on the server. */
+  'game:nudge': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Registers (or re-registers) this player's push subscription. Safe to call repeatedly. */
   'push:subscribe': (payload: { subscription: PushSubscriptionData }, ack: (res: AckResponse<null>) => void) => void;
   /** Reports whether this player's tab is currently focused/visible, so the server can skip

@@ -237,18 +237,6 @@ input {
   color: white;
 }
 
-.reveal-banner {
-  text-align: center;
-  background: rgba(0, 0, 0, 0.25);
-  border-radius: 10px;
-  padding: 0.8rem 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.reveal-banner p {
-  margin: 0 0 0.6rem;
-}
-
 .notification-banner {
   text-align: center;
   background: rgba(0, 0, 0, 0.2);
@@ -424,39 +412,23 @@ input {
   outline: 3px solid #7fffb0;
 }
 
-/* Scoreboard */
+/* Hole-end strip: sits in the normal page flow below the player's hand (not an overlay), so
+   every hand stays visible while the scores are showing. */
 
-.scoreboard-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
-
-.scoreboard-panel {
-  background: var(--cream);
-  color: var(--ink);
-  border-radius: 12px;
-  padding: 2rem;
-  min-width: 320px;
+.hole-end-bar {
   text-align: center;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  margin: 1.5rem auto 0;
+  max-width: 420px;
 }
 
-.scoreboard-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1rem 0 1.5rem;
+.hole-end-bar h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
 }
 
-.scoreboard-table th,
-.scoreboard-table td {
-  padding: 0.4rem 0.8rem;
-  border-bottom: 1px solid #ddd0b0;
-}
-
-.row-winner {
-  font-weight: 700;
+.hole-end-bar .hint {
+  margin: 0 0 0.6rem;
 }

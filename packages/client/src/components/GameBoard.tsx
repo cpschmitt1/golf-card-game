@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import type { GameStateView } from '@golf/engine';
 import { CardView } from './CardView.js';
 import { PlayerGridView } from './PlayerGridView.js';
-import { Scoreboard } from './Scoreboard.js';
 
 interface GameBoardProps {
   state: GameStateView;
@@ -32,7 +31,6 @@ export function GameBoard({
   onLeave,
 }: GameBoardProps) {
   const [selectedPeekSlots, setSelectedPeekSlots] = useState<number[]>([]);
-  const [readyForScoreboard, setReadyForScoreboard] = useState(false);
 
   const me = state.players.find((p) => p.id === playerId);
   const others = state.players.filter((p) => p.id !== playerId);
@@ -42,19 +40,24 @@ export function GameBoard({
   const myPendingDraw = isMyTurn && me?.hasPendingDraw ? { card: me.pendingDrawCard, source: me.pendingDrawSource } : null;
   const canDraw = isMyTurn && !amAwaitingPeek && (state.phase === 'turn' || state.phase === 'final-turns') && !me?.hasPendingDraw;
   // A hole that ended normally reveals every card as part of scoring; a hole discarded by
-  // "End Match" mid-round does not (it's void, so there's nothing new to show). That difference
-  // is exactly the signal for whether the "here's everyone's final hand" pause is worth showing.
+  // "End Match" mid-round does not (it's void and never scored). That difference decides whether
+  // the last entry in holeScores is actually this hole's score, so only show it in the first case.
   const allRevealed = state.players.every((p) => p.grid.every((slot) => slot.faceUp));
-  const showReveal = state.phase === 'complete' && allRevealed && !readyForScoreboard;
-  const showScoreboard = state.phase === 'complete' && (!allRevealed || readyForScoreboard);
+  const holeScored = state.phase === 'complete' && allRevealed;
+  const hasCompletedHoles = state.players.some((p) => p.holeScores.length > 0);
+  const lowestTotal = Math.min(...state.players.map((p) => p.totalScore));
+
+  function scoreLine(p: { holeScores: number[]; totalScore: number }) {
+    const hole = holeScored && p.holeScores.length > 0 ? p.holeScores[p.holeScores.length - 1] : null;
+    return hole === null ? `Total: ${p.totalScore}` : `This hole: ${hole} · Total: ${p.totalScore}`;
+  }
+  function isWinner(p: { totalScore: number }) {
+    return state.matchComplete && hasCompletedHoles && p.totalScore === lowestTotal;
+  }
 
   useEffect(() => {
     setSelectedPeekSlots([]);
   }, [amAwaitingPeek, state.holeNumber]);
-
-  useEffect(() => {
-    setReadyForScoreboard(false);
-  }, [state.holeNumber]);
 
   // Swaps the page background to red for the final round (see body.final-round in styles.css);
   // the cleanup also covers leaving the game or the hole ending, which both unmount/change phase.
@@ -97,7 +100,13 @@ export function GameBoard({
           Hole <strong>{state.holeNumber}</strong> / 18
         </div>
         <div className="turn-status">
-          {amAwaitingPeek ? (
+          {state.phase === 'complete' ? (
+            state.matchComplete ? (
+              'Match complete'
+            ) : (
+              `Hole ${state.holeNumber} complete`
+            )
+          ) : amAwaitingPeek ? (
             'Choose 2 of your cards to reveal'
           ) : state.phase === 'peek' ? (
             `Waiting for ${state.playersAwaitingPeek.length} player(s) to peek…`
@@ -119,23 +128,17 @@ export function GameBoard({
         )}
       </header>
 
-      {showReveal && (
-        <div className="reveal-banner">
-          <p>Hole {state.holeNumber} is over — here's everyone's final hand.</p>
-          <button onClick={() => setReadyForScoreboard(true)}>See Scores →</button>
-        </div>
-      )}
-
       <section className="opponents-row">
         {others.map((p) => (
           <div key={p.id} className={`opponent ${state.currentPlayerId === p.id ? 'opponent-active' : ''}`}>
             <div className="opponent-name">
+              {isWinner(p) && '🏆 '}
               {p.name}
               {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
               {state.playersAwaitingPeek.includes(p.id) && <span className="badge">peeking</span>}
             </div>
             <PlayerGridView grid={p.grid} size="small" />
-            <div className="opponent-total">Total: {p.totalScore}</div>
+            <div className="opponent-total">{scoreLine(p)}</div>
           </div>
         ))}
       </section>
@@ -173,6 +176,7 @@ export function GameBoard({
 
       <section className="my-area">
         <div className="opponent-name">
+          {isWinner(me) && '🏆 '}
           {me.name} <span className="badge badge-you">you</span>
         </div>
         <PlayerGridView grid={me.grid} selectedSlots={selectedPeekSlots} onSlotClick={handleMySlotClick} />
@@ -181,19 +185,38 @@ export function GameBoard({
             Confirm Peek
           </button>
         )}
-        <div className="opponent-total">Total: {me.totalScore}</div>
+        <div className="opponent-total">{scoreLine(me)}</div>
       </section>
 
-      {showScoreboard && (
-        <Scoreboard
-          players={state.players}
-          holeNumber={state.holeNumber}
-          matchComplete={state.matchComplete}
-          isHost={isHost}
-          onNextHole={onNextHole}
-          onPlayAgain={onPlayAgain}
-          onLeave={onLeave}
-        />
+      {state.phase === 'complete' && (
+        <section className="hole-end-bar">
+          {!state.matchComplete && (
+            <>
+              <h2>Hole {state.holeNumber} complete</h2>
+              {isHost ? (
+                <button onClick={onNextHole}>Start Hole {state.holeNumber + 1}</button>
+              ) : (
+                <p className="hint">Waiting for the host to start the next hole…</p>
+              )}
+            </>
+          )}
+          {state.matchComplete && (
+            <>
+              <h2>Match complete</h2>
+              <p className="hint">
+                {hasCompletedHoles ? 'Lowest score wins!' : 'Match ended before any hole finished — no scores to show.'}
+              </p>
+              {isHost ? (
+                <button onClick={onPlayAgain}>Play Again</button>
+              ) : (
+                <p className="hint">Waiting for the host to start a new match…</p>
+              )}
+            </>
+          )}
+          <button className="link-button" onClick={onLeave}>
+            Leave game
+          </button>
+        </section>
       )}
     </div>
   );

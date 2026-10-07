@@ -173,6 +173,19 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
     return;
   }
 
+  // A hole just got scored. Only the host can start the next hole (game:nextHole is host-only),
+  // so they're the one who needs the nudge. The host ending the match themselves (endMatch) never
+  // goes through here, so they aren't pinged about their own action.
+  if (previous.phase !== 'complete' && next.phase === 'complete') {
+    pushUnlessFocused(room, room.hostId, {
+      title: 'Golf Card Game',
+      body: next.matchComplete
+        ? `Hole ${next.holeNumber} is over — that was the last hole, the match is complete!`
+        : `Hole ${next.holeNumber} is over — time to start the next hole!`,
+    });
+    return;
+  }
+
   const wasActiveTurn = previous.phase === 'turn' || previous.phase === 'final-turns';
   const isActiveTurn = next.phase === 'turn' || next.phase === 'final-turns';
   const previousCurrentId = wasActiveTurn ? previous.players[previous.currentPlayerIndex]?.id : null;

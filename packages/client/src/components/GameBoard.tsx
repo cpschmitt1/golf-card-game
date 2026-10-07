@@ -100,6 +100,16 @@ export function GameBoard({
 
   const currentPlayerName = state.players.find((p) => p.id === state.currentPlayerId)?.name ?? '';
   const finisherName = state.players.find((p) => p.id === state.finisherId)?.name ?? '';
+  const dealerId = state.players[state.dealerIndex]?.id ?? null;
+  const dealerName = state.players[state.dealerIndex]?.name ?? '';
+  // During the peek phase currentPlayerId is the first player to act (the seat after the dealer).
+  const firstPlayerName = state.players.find((p) => p.id === state.currentPlayerId)?.name ?? '';
+  const peekNote =
+    state.phase === 'peek'
+      ? `${dealerId === playerId ? "You're" : `${dealerName} is`} dealing — ${
+          state.currentPlayerId === playerId ? 'you go' : `${firstPlayerName} goes`
+        } first`
+      : null;
   const canNudge = !isMyTurn && !!state.currentPlayerId && (state.phase === 'turn' || state.phase === 'final-turns');
 
   function handleNudge() {
@@ -141,6 +151,8 @@ export function GameBoard({
         )}
       </header>
 
+      {peekNote && <div className="peek-note">{peekNote}</div>}
+
       {canNudge && (
         <div className="nudge-row">
           <button className="nudge-button" disabled={nudge?.sent === true} onClick={handleNudge}>
@@ -156,6 +168,7 @@ export function GameBoard({
             <div className="opponent-name">
               {isWinner(p) && '🏆 '}
               {p.name}
+              {p.id === dealerId && <span className="dealer-chip">D</span>}
               {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
               {state.playersAwaitingPeek.includes(p.id) && <span className="badge">peeking</span>}
             </div>
@@ -200,6 +213,7 @@ export function GameBoard({
         <div className="opponent-name">
           {isWinner(me) && '🏆 '}
           {me.name} <span className="badge badge-you">you</span>
+          {me.id === dealerId && <span className="dealer-chip">D</span>}
         </div>
         <PlayerGridView grid={me.grid} selectedSlots={selectedPeekSlots} onSlotClick={handleMySlotClick} />
         {amAwaitingPeek && (

@@ -181,7 +181,10 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
   if (isActiveTurn && nextCurrentId && nextCurrentId !== previousCurrentId) {
     pushUnlessFocused(room, nextCurrentId, {
       title: 'Golf Card Game',
-      body: `It's your turn — Hole ${next.holeNumber} of 18`,
+      body:
+        next.phase === 'final-turns'
+          ? `It's your final turn! — Hole ${next.holeNumber} of 18`
+          : `It's your turn — Hole ${next.holeNumber} of 18`,
     });
   }
 }

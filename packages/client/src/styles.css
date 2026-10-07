@@ -25,6 +25,11 @@ body {
   color: var(--cream);
 }
 
+body.final-round {
+  --green: #8e2222;
+  --green-dark: #4a1010;
+}
+
 button {
   font: inherit;
   background: var(--gold);
@@ -210,6 +215,11 @@ input {
   gap: 1rem;
   margin-bottom: 1.5rem;
   font-size: 1.1rem;
+}
+
+.final-round-note {
+  font-size: 0.8rem;
+  opacity: 0.8;
 }
 
 .end-match-button {

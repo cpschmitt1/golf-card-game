@@ -56,6 +56,15 @@ export function GameBoard({
     setReadyForScoreboard(false);
   }, [state.holeNumber]);
 
+  // Swaps the page background to red for the final round (see body.final-round in styles.css);
+  // the cleanup also covers leaving the game or the hole ending, which both unmount/change phase.
+  const isFinalRound = state.phase === 'final-turns';
+  useEffect(() => {
+    if (!isFinalRound) return;
+    document.body.classList.add('final-round');
+    return () => document.body.classList.remove('final-round');
+  }, [isFinalRound]);
+
   if (!me) return null;
 
   function handleEndMatch() {
@@ -88,15 +97,20 @@ export function GameBoard({
           Hole <strong>{state.holeNumber}</strong> / 18
         </div>
         <div className="turn-status">
-          {amAwaitingPeek
-            ? 'Choose 2 of your cards to reveal'
-            : state.phase === 'peek'
-              ? `Waiting for ${state.playersAwaitingPeek.length} player(s) to peek…`
-              : state.phase === 'final-turns'
-                ? `Final round — ${finisherName} finished! Everyone gets one more turn.`
-                : isMyTurn
-                  ? 'Your turn'
-                  : `${currentPlayerName}'s turn`}
+          {amAwaitingPeek ? (
+            'Choose 2 of your cards to reveal'
+          ) : state.phase === 'peek' ? (
+            `Waiting for ${state.playersAwaitingPeek.length} player(s) to peek…`
+          ) : state.phase === 'final-turns' ? (
+            <>
+              <div className="final-round-note">Final round — {finisherName} finished!</div>
+              <div>{isMyTurn ? 'Your turn' : `${currentPlayerName}'s turn`}</div>
+            </>
+          ) : isMyTurn ? (
+            'Your turn'
+          ) : (
+            `${currentPlayerName}'s turn`
+          )}
         </div>
         {isHost && !state.matchComplete && (
           <button className="end-match-button" onClick={handleEndMatch}>

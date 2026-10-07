@@ -25,13 +25,13 @@ self.addEventListener('push', (event) => {
         badge: '/icon-192.png',
         tag: 'golf-notification',
       });
-      // No count argument — renders as a plain dot/circle rather than a number. Requires
-      // notification permission to already be granted (it silently no-ops otherwise), which is
-      // exactly the case whenever we get this far anyway. Supported on iOS 16.4+ for a PWA
-      // installed to the home screen; harmlessly does nothing on platforms that don't support it.
+      // Explicit count: the no-argument "flag" badge never rendered on iOS, so ask for a number.
+      // Requires notification permission to already be granted (it silently no-ops otherwise),
+      // which is exactly the case whenever we get this far anyway. Supported on iOS 16.4+ for a
+      // PWA installed to the home screen; harmlessly does nothing on platforms that don't.
       if ('setAppBadge' in navigator) {
         try {
-          await navigator.setAppBadge();
+          await navigator.setAppBadge(1);
         } catch {
           // Not fatal — the notification itself already went out above.
         }

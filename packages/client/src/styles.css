@@ -149,9 +149,41 @@ input {
   background: var(--cream);
 }
 
-.badge-disconnected {
-  background: #888;
-  color: white;
+/* Offline players: the whole box fades and the long badge is replaced by a small dot (tap to
+   spell it out). The dot has a generous invisible tap area since it's tiny on a phone. */
+.opponent-disconnected {
+  opacity: 0.55;
+}
+
+.player-disconnected {
+  color: rgba(246, 241, 231, 0.55);
+}
+
+.player-disconnected .kick-button {
+  color: var(--cream);
+}
+
+.disconnected-dot {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.7rem 0.6rem;
+  margin: -0.7rem -0.4rem;
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+
+.disconnected-dot-mark {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: #c9ccd1;
+}
+
+.disconnected-dot.disconnected-dot-open {
+  padding: 0.1rem 0.45rem;
+  margin: 0 0 0 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .kick-button {

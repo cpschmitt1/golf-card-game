@@ -3,6 +3,7 @@ import type { AckResponse, GameStateView } from '@golf/engine';
 import { CardView } from './CardView.js';
 import { PlayerGridView } from './PlayerGridView.js';
 import { ScoresPanel } from './ScoresPanel.js';
+import { DisconnectedDot } from './DisconnectedDot.js';
 
 interface GameBoardProps {
   state: GameStateView;
@@ -189,12 +190,15 @@ export function GameBoard({
 
       <section className="opponents-row">
         {others.map((p) => (
-          <div key={p.id} className={`opponent ${state.currentPlayerId === p.id ? 'opponent-active' : ''}`}>
+          <div
+            key={p.id}
+            className={`opponent ${state.currentPlayerId === p.id ? 'opponent-active' : ''} ${p.connected ? '' : 'opponent-disconnected'}`}
+          >
             <div className="opponent-name">
               {isWinner(p) && '🏆 '}
               {p.name}
               {p.id === dealerId && dealerChip}
-              {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
+              {!p.connected && <DisconnectedDot />}
               {state.playersAwaitingPeek.includes(p.id) && <span className="badge">peeking</span>}
             </div>
             <PlayerGridView grid={p.grid} size="small" />

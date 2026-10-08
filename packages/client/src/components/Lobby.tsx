@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { LobbyView } from '@golf/engine';
+import { DisconnectedDot } from './DisconnectedDot.js';
 
 interface LobbyProps {
   lobby: LobbyView;
@@ -35,11 +36,11 @@ export function Lobby({
 
       <ul className="player-list">
         {lobby.players.map((p) => (
-          <li key={p.id}>
+          <li key={p.id} className={p.connected ? '' : 'player-disconnected'}>
             {p.name}
             {p.id === lobby.hostId && <span className="badge">host</span>}
             {p.id === playerId && <span className="badge badge-you">you</span>}
-            {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
+            {!p.connected && <DisconnectedDot />}
             {isHost &&
               p.id !== lobby.hostId &&
               (pendingKickId === p.id ? (

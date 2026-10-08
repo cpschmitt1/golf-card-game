@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AckResponse, GameStateView } from '@golf/engine';
 import { CardView } from './CardView.js';
 import { PlayerGridView } from './PlayerGridView.js';
+import { ScoresPanel } from './ScoresPanel.js';
 
 interface GameBoardProps {
   state: GameStateView;
@@ -34,6 +35,8 @@ export function GameBoard({
 }: GameBoardProps) {
   const [selectedPeekSlots, setSelectedPeekSlots] = useState<number[]>([]);
   const [nudge, setNudge] = useState<{ sent: boolean; message: string } | null>(null);
+  const [scoresOpen, setScoresOpen] = useState(false);
+  const [dealerLabelOpen, setDealerLabelOpen] = useState(false);
 
   const me = state.players.find((p) => p.id === playerId);
   const others = state.players.filter((p) => p.id !== playerId);
@@ -66,6 +69,13 @@ export function GameBoard({
   useEffect(() => {
     setNudge(null);
   }, [state.currentPlayerId]);
+
+  // Phones have no hover, so tapping the "D" chip briefly spells it out as "Dealer".
+  useEffect(() => {
+    if (!dealerLabelOpen) return;
+    const timer = setTimeout(() => setDealerLabelOpen(false), 2500);
+    return () => clearTimeout(timer);
+  }, [dealerLabelOpen]);
 
   // Swaps the page background to red for the final round (see body.final-round in styles.css);
   // the cleanup also covers leaving the game or the hole ending, which both unmount/change phase.
@@ -110,6 +120,16 @@ export function GameBoard({
           state.currentPlayerId === playerId ? 'you go' : `${firstPlayerName} goes`
         } first`
       : null;
+
+  const dealerChip = (
+    <span
+      className={`dealer-chip ${dealerLabelOpen ? 'dealer-chip-open' : ''}`}
+      title="Dealer"
+      onClick={() => setDealerLabelOpen(true)}
+    >
+      {dealerLabelOpen ? 'Dealer' : 'D'}
+    </span>
+  );
   const canNudge = !isMyTurn && !!state.currentPlayerId && (state.phase === 'turn' || state.phase === 'final-turns');
 
   function handleNudge() {
@@ -119,8 +139,13 @@ export function GameBoard({
   return (
     <div className="screen game-screen">
       <header className="game-header">
-        <div>
-          Hole <strong>{state.holeNumber}</strong> / 18
+        <div className="header-left">
+          <div>
+            Hole <strong>{state.holeNumber}</strong> / 18
+          </div>
+          <button className="scores-button" onClick={() => setScoresOpen((open) => !open)}>
+            📊 Scores
+          </button>
         </div>
         <div className="turn-status">
           {state.phase === 'complete' ? (
@@ -168,7 +193,7 @@ export function GameBoard({
             <div className="opponent-name">
               {isWinner(p) && '🏆 '}
               {p.name}
-              {p.id === dealerId && <span className="dealer-chip">D</span>}
+              {p.id === dealerId && dealerChip}
               {!p.connected && <span className="badge badge-disconnected">disconnected</span>}
               {state.playersAwaitingPeek.includes(p.id) && <span className="badge">peeking</span>}
             </div>
@@ -213,7 +238,7 @@ export function GameBoard({
         <div className="opponent-name">
           {isWinner(me) && '🏆 '}
           {me.name} <span className="badge badge-you">you</span>
-          {me.id === dealerId && <span className="dealer-chip">D</span>}
+          {me.id === dealerId && dealerChip}
         </div>
         <PlayerGridView grid={me.grid} selectedSlots={selectedPeekSlots} onSlotClick={handleMySlotClick} />
         {amAwaitingPeek && (
@@ -254,6 +279,8 @@ export function GameBoard({
           </button>
         </section>
       )}
+
+      {scoresOpen && <ScoresPanel players={state.players} myPlayerId={playerId} onClose={() => setScoresOpen(false)} />}
     </div>
   );
 }

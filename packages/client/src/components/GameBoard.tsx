@@ -13,6 +13,8 @@ interface GameBoardProps {
   onDrawDiscard: () => void;
   onSwap: (slotIndex: number) => void;
   onDiscard: () => void;
+  /** False when the server is too old to support nudging, so the button is hidden entirely. */
+  nudgeAvailable: boolean;
   onNudge: (done: (res: AckResponse<null>) => void) => void;
   onNextHole: () => void;
   onEndMatch: () => void;
@@ -28,6 +30,7 @@ export function GameBoard({
   onDrawDiscard,
   onSwap,
   onDiscard,
+  nudgeAvailable,
   onNudge,
   onNextHole,
   onEndMatch,
@@ -131,7 +134,7 @@ export function GameBoard({
       {dealerLabelOpen ? 'Dealer' : 'D'}
     </span>
   );
-  const canNudge = !isMyTurn && !!state.currentPlayerId && (state.phase === 'turn' || state.phase === 'final-turns');
+  const canNudge = nudgeAvailable && !isMyTurn && !!state.currentPlayerId && (state.phase === 'turn' || state.phase === 'final-turns');
 
   function handleNudge() {
     onNudge((res) => setNudge(res.ok ? { sent: true, message: `Nudge sent to ${currentPlayerName}.` } : { sent: false, message: res.error }));

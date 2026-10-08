@@ -41,6 +41,12 @@ export interface PushSubscriptionData {
   };
 }
 
+/** Optional features a server build supports. A client only shows UI for features its server reports. */
+export interface ServerFeatures {
+  chat: boolean;
+  nudge: boolean;
+}
+
 /** One chat line. `name` is stamped by the server from the sender's room identity, never client-supplied. */
 export interface ChatMessage {
   id: string;
@@ -72,6 +78,8 @@ export interface ClientToServerEvents {
   'game:nextHole': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Host-only. Ends the match immediately in any phase; an in-progress hole is discarded, not scored. */
   'game:endMatch': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Asks which optional features this server supports. Servers older than this event never answer. */
+  'server:features': (payload: Record<string, never>, ack: (res: AckResponse<ServerFeatures>) => void) => void;
   /** Posts a message to everyone in the sender's room. Rate-limited on the server. */
   'chat:send': (payload: { text: string }, ack: (res: AckResponse<null>) => void) => void;
   /** Sends the player whose turn it is a reminder push. Rate-limited per target on the server. */

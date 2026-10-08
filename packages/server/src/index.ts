@@ -432,6 +432,10 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     });
   });
 
+  socket.on('server:features', (_payload, callback) => {
+    ack(callback, () => ({ chat: true, nudge: true }));
+  });
+
   socket.on('chat:send', ({ text }, callback) => {
     ack(callback, () => {
       const room = requireRoom(socket.data.roomCode);

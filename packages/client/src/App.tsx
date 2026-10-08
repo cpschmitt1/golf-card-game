@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { AckResponse, ChatMessage, GameStateView, LobbyView } from '@golf/engine';
+import type { AckResponse, ChatMessage, GameStateView, LobbyView, ServerFeatures } from '@golf/engine';
 import { socket } from './socket.js';
 import { clearSession, loadSession, saveSession } from './session.js';
 import { getOrCreatePushSubscription, isPushSupported } from './push.js';
@@ -26,6 +26,9 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
     isPushSupported() ? Notification.permission : 'unsupported',
   );
+  // Chat and nudge only exist on newer servers. Servers that predate 'server:features' never
+  // answer it, so these stay off (and their buttons hidden) until the server says otherwise.
+  const [features, setFeatures] = useState<ServerFeatures>({ chat: false, nudge: false });
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [lastSeenChatId, setLastSeenChatId] = useState<string | null>(null);
@@ -33,6 +36,9 @@ export default function App() {
   useEffect(() => {
     function attemptResume() {
       setSocketConnected(true);
+      socket.emit('server:features', {}, (res) => {
+        if (res.ok) setFeatures(res.data);
+      });
       const stored = loadSession();
       if (!stored) {
         setReconnecting(false);
@@ -283,7 +289,7 @@ export default function App() {
     <div className="connection-banner">Connection lost — reconnecting…</div>
   );
 
-  const chatPanel = playerId && (
+  const chatPanel = playerId && features.chat && (
     <ChatPanel
       messages={chatMessages}
       myPlayerId={playerId}
@@ -315,6 +321,7 @@ export default function App() {
           onDrawDiscard={() => socket.emit('game:drawDiscard', {}, reportIfError)}
           onSwap={(slotIndex) => socket.emit('game:swap', { slotIndex }, reportIfError)}
           onDiscard={() => socket.emit('game:discard', {}, reportIfError)}
+          nudgeAvailable={features.nudge}
           onNudge={(done) => socket.emit('game:nudge', {}, done)}
           onNextHole={() => socket.emit('game:nextHole', {}, reportIfError)}
           onEndMatch={() => socket.emit('game:endMatch', {}, reportIfError)}

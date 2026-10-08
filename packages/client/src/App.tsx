@@ -1,11 +1,18 @@
-import { useEffect, useState } from 'react';
-import type { GameStateView, LobbyView } from '@golf/engine';
+import { useEffect, useMemo, useState } from 'react';
+import type { AckResponse, ChatMessage, GameStateView, LobbyView } from '@golf/engine';
 import { socket } from './socket.js';
 import { clearSession, loadSession, saveSession } from './session.js';
 import { getOrCreatePushSubscription, isPushSupported } from './push.js';
 import { Home } from './components/Home.js';
 import { Lobby } from './components/Lobby.js';
 import { GameBoard } from './components/GameBoard.js';
+import { ChatPanel } from './components/ChatPanel.js';
+
+const CHAT_HISTORY_LIMIT = 100;
+
+function chatSeenKey(playerId: string): string {
+  return `golf-chat-seen:${playerId}`;
+}
 
 export default function App() {
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -19,6 +26,9 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
     isPushSupported() ? Notification.permission : 'unsupported',
   );
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [lastSeenChatId, setLastSeenChatId] = useState<string | null>(null);
 
   useEffect(() => {
     function attemptResume() {
@@ -82,7 +92,17 @@ export default function App() {
       setGameState(null);
       setError('The host removed you from the room.');
     }
+    function handleChatMessage(message: ChatMessage) {
+      setChatMessages((prev) =>
+        prev.some((m) => m.id === message.id) ? prev : [...prev, message].slice(-CHAT_HISTORY_LIMIT),
+      );
+    }
+    function handleChatHistory(history: ChatMessage[]) {
+      setChatMessages(history);
+    }
 
+    socket.on('chat:message', handleChatMessage);
+    socket.on('chat:history', handleChatHistory);
     socket.on('connect', attemptResume);
     socket.on('disconnect', handleDisconnect);
     socket.on('lobby:update', handleLobby);
@@ -101,8 +121,48 @@ export default function App() {
       socket.off('game:state', handleGameState);
       socket.off('error', handleError);
       socket.off('room:kicked', handleKicked);
+      socket.off('chat:message', handleChatMessage);
+      socket.off('chat:history', handleChatHistory);
     };
   }, []);
+
+  // Chat state belongs to one room membership: drop it when leaving, being removed, or being
+  // bumped by another tab (all of which set playerId back to null). The history for a room is
+  // delivered before playerId is set, so this must only react to it going null, never to it being set.
+  useEffect(() => {
+    if (playerId) return;
+    setChatMessages([]);
+    setChatOpen(false);
+    setLastSeenChatId(null);
+  }, [playerId]);
+
+  // "Read up to here" is remembered per player identity so unread counts survive closing the
+  // app — important when friends chat while you're away between turns.
+  useEffect(() => {
+    if (!playerId) return;
+    try {
+      setLastSeenChatId(localStorage.getItem(chatSeenKey(playerId)));
+    } catch {
+      setLastSeenChatId(null);
+    }
+  }, [playerId]);
+
+  useEffect(() => {
+    if (!chatOpen || !playerId || chatMessages.length === 0) return;
+    const latestId = chatMessages[chatMessages.length - 1].id;
+    setLastSeenChatId(latestId);
+    try {
+      localStorage.setItem(chatSeenKey(playerId), latestId);
+    } catch {
+      // Not fatal — the unread count just won't survive a reload.
+    }
+  }, [chatOpen, chatMessages, playerId]);
+
+  const unreadChatCount = useMemo(() => {
+    if (chatOpen) return 0;
+    const seenIndex = lastSeenChatId ? chatMessages.findIndex((m) => m.id === lastSeenChatId) : -1;
+    return chatMessages.slice(seenIndex + 1).filter((m) => m.playerId !== playerId).length;
+  }, [chatOpen, chatMessages, lastSeenChatId, playerId]);
 
   // Clears the home-screen app badge as soon as the page loads — covers opening the app from
   // its icon directly (not via tapping the notification, which already clears it itself in
@@ -223,6 +283,18 @@ export default function App() {
     <div className="connection-banner">Connection lost — reconnecting…</div>
   );
 
+  const chatPanel = playerId && (
+    <ChatPanel
+      messages={chatMessages}
+      myPlayerId={playerId}
+      open={chatOpen}
+      unreadCount={unreadChatCount}
+      onOpen={() => setChatOpen(true)}
+      onClose={() => setChatOpen(false)}
+      onSend={(text, done: (res: AckResponse<null>) => void) => socket.emit('chat:send', { text }, done)}
+    />
+  );
+
   if (reconnecting) {
     return <div className="screen">Resuming your game…</div>;
   }
@@ -249,6 +321,7 @@ export default function App() {
           onPlayAgain={() => socket.emit('room:restart', {}, reportIfError)}
           onLeave={handleLeave}
         />
+        {chatPanel}
       </>
     );
   }
@@ -267,6 +340,7 @@ export default function App() {
           onEnableNotifications={handleEnableNotifications}
           onKickPlayer={handleKickPlayer}
         />
+        {chatPanel}
       </>
     );
   }

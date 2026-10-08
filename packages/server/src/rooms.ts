@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { GameState, LobbyPlayer, LobbyView } from '@golf/engine';
+import type { ChatMessage, GameState, LobbyPlayer, LobbyView } from '@golf/engine';
 
 export interface RoomRecord {
   code: string;
@@ -16,6 +16,10 @@ export interface RoomRecord {
   focusedByPlayerId: Map<string, boolean>;
   /** targetPlayerId -> when they were last nudged (epoch ms), for the nudge cooldown. */
   lastNudgeAtByTarget: Map<string, number>;
+  /** Most recent chat messages, oldest first. In memory only — cleared by a server restart. */
+  chat: ChatMessage[];
+  /** playerId -> recent send times (epoch ms), for the chat rate limit. */
+  chatSendTimesByPlayerId: Map<string, number[]>;
 }
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
@@ -53,6 +57,8 @@ export class RoomStore {
       socketByPlayerId: new Map(),
       focusedByPlayerId: new Map(),
       lastNudgeAtByTarget: new Map(),
+      chat: [],
+      chatSendTimesByPlayerId: new Map(),
     };
     this.rooms.set(code, room);
     return { room, playerId, token };

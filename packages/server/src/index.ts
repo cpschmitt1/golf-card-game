@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,7 @@ import {
   GolfEngineError,
   swapCard,
   type AckResponse,
+  type ChatMessage,
   type ClientToServerEvents,
   type GameState,
   type ServerToClientEvents,
@@ -158,6 +160,20 @@ function turnMessage(state: GameState): string {
 
 const NUDGE_COOLDOWN_MS = 30 * 60 * 1000;
 
+const CHAT_MAX_LENGTH = 280;
+const CHAT_HISTORY_LIMIT = 100;
+const CHAT_RATE_LIMIT_COUNT = 5;
+const CHAT_RATE_LIMIT_WINDOW_MS = 10_000;
+
+/** Everyone currently in the room, whether or not the match has started. */
+function roomPlayers(room: RoomRecord): { id: string; name: string }[] {
+  return room.gameState ? room.gameState.players : room.lobbyPlayers;
+}
+
+function sendChatHistory(socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>, room: RoomRecord): void {
+  socket.emit('chat:history', room.chat);
+}
+
 /**
  * Compares the state before and after a game action to decide whether anyone needs a "come back"
  * push notification. Call this right after applying an action, with `previous` being the state
@@ -227,6 +243,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const name = playerName.trim().slice(0, 24) || 'Player';
       const { playerId, token } = rooms.join(room, name);
       bindSocketToPlayer(socket, room, playerId);
+      sendChatHistory(socket, room);
       broadcastLobby(room);
       // Only for a genuinely new player joining, not room:reconnect — an existing player coming
       // back isn't news to the host the way a new arrival is.
@@ -245,6 +262,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         throw new GolfEngineError('INVALID_SESSION', 'Could not resume that session — please rejoin.');
       }
       bindSocketToPlayer(socket, room, playerId);
+      sendChatHistory(socket, room);
       broadcastRoom(room);
       return {
         playerId,
@@ -319,6 +337,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const targetSocketId = room.socketByPlayerId.get(targetId);
       room.socketByPlayerId.delete(targetId);
       room.focusedByPlayerId.delete(targetId);
+      room.chatSendTimesByPlayerId.delete(targetId);
 
       // Tell the removed player directly, then detach their socket from the room so any further
       // action they send fails with NOT_IN_ROOM — same end state as if they'd left voluntarily.
@@ -409,6 +428,33 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can end the match.');
       room.gameState = endMatch(state);
       broadcastGameState(room.gameState);
+      return null;
+    });
+  });
+
+  socket.on('chat:send', ({ text }, callback) => {
+    ack(callback, () => {
+      const room = requireRoom(socket.data.roomCode);
+      const playerId = requirePlayerId(socket);
+      const sender = roomPlayers(room).find((p) => p.id === playerId);
+      if (!sender) throw new GolfEngineError('NOT_IN_ROOM', 'You are not in this room.');
+
+      const body = typeof text === 'string' ? text.trim().slice(0, CHAT_MAX_LENGTH) : '';
+      if (!body) throw new GolfEngineError('EMPTY_MESSAGE', 'Type a message first.');
+
+      const now = Date.now();
+      const recent = (room.chatSendTimesByPlayerId.get(playerId) ?? []).filter((t) => now - t < CHAT_RATE_LIMIT_WINDOW_MS);
+      if (recent.length >= CHAT_RATE_LIMIT_COUNT) {
+        throw new GolfEngineError('CHAT_RATE_LIMIT', "You're sending messages too fast — wait a few seconds.");
+      }
+      recent.push(now);
+      room.chatSendTimesByPlayerId.set(playerId, recent);
+
+      const message: ChatMessage = { id: randomUUID(), playerId, name: sender.name, text: body, sentAt: now };
+      room.chat.push(message);
+      if (room.chat.length > CHAT_HISTORY_LIMIT) room.chat.splice(0, room.chat.length - CHAT_HISTORY_LIMIT);
+
+      for (const p of roomPlayers(room)) io.to(p.id).emit('chat:message', message);
       return null;
     });
   });

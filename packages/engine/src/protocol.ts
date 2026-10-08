@@ -41,6 +41,16 @@ export interface PushSubscriptionData {
   };
 }
 
+/** One chat line. `name` is stamped by the server from the sender's room identity, never client-supplied. */
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  name: string;
+  text: string;
+  /** Epoch ms, set by the server. */
+  sentAt: number;
+}
+
 export interface ClientToServerEvents {
   'room:create': (payload: { playerName: string }, ack: (res: AckResponse<JoinedRoom>) => void) => void;
   'room:join': (payload: { roomCode: string; playerName: string }, ack: (res: AckResponse<JoinedRoom>) => void) => void;
@@ -62,6 +72,8 @@ export interface ClientToServerEvents {
   'game:nextHole': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Host-only. Ends the match immediately in any phase; an in-progress hole is discarded, not scored. */
   'game:endMatch': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Posts a message to everyone in the sender's room. Rate-limited on the server. */
+  'chat:send': (payload: { text: string }, ack: (res: AckResponse<null>) => void) => void;
   /** Sends the player whose turn it is a reminder push. Rate-limited per target on the server. */
   'game:nudge': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Registers (or re-registers) this player's push subscription. Safe to call repeatedly. */
@@ -77,4 +89,8 @@ export interface ServerToClientEvents {
   'error': (err: { message: string }) => void;
   /** Sent to a player the host just removed from the lobby, in place of a lobby:update. */
   'room:kicked': (payload: { roomCode: string }) => void;
+  /** A new chat message in the room. */
+  'chat:message': (message: ChatMessage) => void;
+  /** The room's stored chat (most recent messages), sent when a player joins or reconnects. */
+  'chat:history': (messages: ChatMessage[]) => void;
 }

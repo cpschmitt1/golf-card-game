@@ -43,7 +43,14 @@ export function GameBoard({
   const [dealerLabelOpen, setDealerLabelOpen] = useState(false);
 
   const me = state.players.find((p) => p.id === playerId);
-  const others = state.players.filter((p) => p.id !== playerId);
+  // Opponents in the order they'll play after you: whoever goes right after you first, whoever
+  // goes right before you last (you sit at the bottom, closing the circle). Turns run through
+  // state.players in order and wrap, so this is that same order rotated to start just after you.
+  const myIndex = state.players.findIndex((p) => p.id === playerId);
+  const others =
+    myIndex === -1
+      ? state.players
+      : Array.from({ length: state.players.length - 1 }, (_, i) => state.players[(myIndex + 1 + i) % state.players.length]);
   const amAwaitingPeek = state.playersAwaitingPeek.includes(playerId);
   const isMyTurn = state.currentPlayerId === playerId;
   const isHost = state.hostId === playerId;

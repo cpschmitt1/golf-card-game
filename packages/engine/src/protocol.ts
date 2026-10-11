@@ -47,6 +47,15 @@ export interface ServerFeatures {
   nudge: boolean;
 }
 
+/** A problem the app noticed on the player's device, forwarded so it can be logged on the server. */
+export interface ClientLogPayload {
+  /** Short category, e.g. "no_response", "js_error", "reconnected". */
+  kind: string;
+  detail: string;
+  /** Browser/device string, to tell iPhone Safari from Chrome etc. */
+  ua?: string;
+}
+
 /** One chat line. `name` is stamped by the server from the sender's room identity, never client-supplied. */
 export interface ChatMessage {
   id: string;
@@ -78,6 +87,8 @@ export interface ClientToServerEvents {
   'game:nextHole': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
   /** Host-only. Ends the match immediately in any phase; an in-progress hole is discarded, not scored. */
   'game:endMatch': (payload: Record<string, never>, ack: (res: AckResponse<null>) => void) => void;
+  /** Fire-and-forget report of something that went wrong on the client. Rate-limited, then logged. */
+  'client:log': (payload: ClientLogPayload) => void;
   /** Asks which optional features this server supports. Servers older than this event never answer. */
   'server:features': (payload: Record<string, never>, ack: (res: AckResponse<ServerFeatures>) => void) => void;
   /** Posts a message to everyone in the sender's room. Rate-limited on the server. */

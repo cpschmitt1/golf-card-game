@@ -15,6 +15,8 @@ interface GameBoardProps {
   onDiscard: () => void;
   /** False when the server is too old to support nudging, so the button is hidden entirely. */
   nudgeAvailable: boolean;
+  /** Sends a note about a problem on this device to the server log. */
+  onReport: (kind: string, detail: string) => void;
   onNudge: (done: (res: AckResponse<null>) => void) => void;
   onNextHole: () => void;
   onEndMatch: () => void;
@@ -31,6 +33,7 @@ export function GameBoard({
   onSwap,
   onDiscard,
   nudgeAvailable,
+  onReport,
   onNudge,
   onNextHole,
   onEndMatch,
@@ -154,10 +157,10 @@ export function GameBoard({
   // it now shows progress, shows a rejection, and gives up visibly if the server never answers.
   function handlePlayAgain() {
     setRestart({ busy: true, error: null });
-    const timer = setTimeout(
-      () => setRestart({ busy: false, error: 'No response from the server — check your connection and try again.' }),
-      6000,
-    );
+    const timer = setTimeout(() => {
+      onReport('no_response', 'Play Again (room:restart) got no answer within 6s');
+      setRestart({ busy: false, error: 'No response from the server — check your connection and try again.' });
+    }, 6000);
     onPlayAgain((res) => {
       clearTimeout(timer);
       setRestart({ busy: false, error: res.ok ? null : res.error });

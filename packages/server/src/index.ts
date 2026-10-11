@@ -25,6 +25,7 @@ import {
   type ServerToClientEvents,
 } from '@golf/engine';
 
+import { logEvent } from './log.js';
 import { RoomStore, type RoomRecord } from './rooms.js';
 import { getPushSubscription, savePushSubscription } from './pushSubscriptions.js';
 import { sendPushToPlayer, type PushPayload } from './pushSend.js';
@@ -72,6 +73,22 @@ interface SocketData {
   roomCode?: string;
 }
 
+type GolfSocket = Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>;
+
+/**
+ * Which socket and event is being handled right now. Socket.IO runs the onAny listener and the
+ * event's own handler back to back in the same tick, so setting this in onAny is enough for
+ * `ack` (below) to say which action it just rejected.
+ */
+let currentCall: { event: string; socket: GolfSocket } | null = null;
+
+/** Room code and player name for log lines, if this socket is in a room. */
+function actor(socket: GolfSocket): { room?: string; by?: string } {
+  const room = socket.data.roomCode ? rooms.get(socket.data.roomCode) : undefined;
+  const by = room && socket.data.playerId ? roomPlayers(room).find((p) => p.id === socket.data.playerId)?.name : undefined;
+  return { room: socket.data.roomCode, by };
+}
+
 function broadcastLobby(room: RoomRecord): void {
   const lobby = rooms.toLobbyView(room);
   for (const player of room.lobbyPlayers) {
@@ -90,6 +107,14 @@ function ack<T>(callback: (res: AckResponse<T>) => void, fn: () => T): void {
     callback({ ok: true, data: fn() });
   } catch (err) {
     const message = err instanceof GolfEngineError || err instanceof Error ? err.message : 'Unknown error';
+    if (currentCall) {
+      logEvent('action_rejected', {
+        action: currentCall.event,
+        code: err instanceof GolfEngineError ? err.code : 'ERROR',
+        message,
+        ...actor(currentCall.socket),
+      });
+    }
     callback({ ok: false, error: message });
   }
 }
@@ -189,6 +214,7 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
   if (!next) return;
 
   if (previous.phase !== 'peek' && next.phase === 'peek') {
+    logEvent('hole_started', { room: room.code, hole: next.holeNumber, dealer: next.players[next.dealerIndex]?.name });
     for (const player of next.players) {
       pushUnlessFocused(room, player.id, {
         title: 'Golf Card Game',
@@ -202,6 +228,12 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
   // so they're the one who needs the nudge. The host ending the match themselves (endMatch) never
   // goes through here, so they aren't pinged about their own action.
   if (previous.phase !== 'complete' && next.phase === 'complete') {
+    logEvent('hole_scored', {
+      room: room.code,
+      hole: next.holeNumber,
+      matchComplete: next.matchComplete,
+      scores: next.players.map((p) => `${p.name}:${p.holeScores[p.holeScores.length - 1]}`).join(','),
+    });
     pushUnlessFocused(room, room.hostId, {
       title: 'Golf Card Game',
       body: next.matchComplete
@@ -209,6 +241,15 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
         : `Hole ${next.holeNumber} is over — time to start the next hole!`,
     });
     return;
+  }
+
+  if (previous.phase === 'turn' && next.phase === 'final-turns') {
+    logEvent('final_round_started', {
+      room: room.code,
+      hole: next.holeNumber,
+      finisher: next.players.find((p) => p.id === next.finisherId)?.name,
+      turnsOwed: next.finalTurnsRemaining,
+    });
   }
 
   const wasActiveTurn = previous.phase === 'turn' || previous.phase === 'final-turns';
@@ -225,10 +266,15 @@ function notifyOnStateChange(previous: GameState, room: RoomRecord): void {
 }
 
 io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, object, SocketData>) => {
+  socket.onAny((event: string) => {
+    currentCall = { event, socket };
+  });
+
   socket.on('room:create', ({ playerName }, callback) => {
     ack(callback, () => {
       const name = playerName.trim().slice(0, 24) || 'Player';
       const { room, playerId, token } = rooms.create(name);
+      logEvent('room_created', { room: room.code, host: name });
       bindSocketToPlayer(socket, room, playerId);
       broadcastLobby(room);
       return { roomCode: room.code, playerId, playerToken: token };
@@ -242,6 +288,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       if (room.lobbyPlayers.length >= 6) throw new GolfEngineError('ROOM_FULL', 'That room already has 6 players.');
       const name = playerName.trim().slice(0, 24) || 'Player';
       const { playerId, token } = rooms.join(room, name);
+      logEvent('player_joined', { room: room.code, name, players: room.lobbyPlayers.length });
       bindSocketToPlayer(socket, room, playerId);
       sendChatHistory(socket, room);
       broadcastLobby(room);
@@ -262,6 +309,11 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         throw new GolfEngineError('INVALID_SESSION', 'Could not resume that session — please rejoin.');
       }
       bindSocketToPlayer(socket, room, playerId);
+      logEvent('player_reconnected', {
+        room: room.code,
+        name: roomPlayers(room).find((p) => p.id === playerId)?.name,
+        phase: room.gameState?.phase ?? 'lobby',
+      });
       sendChatHistory(socket, room);
       broadcastRoom(room);
       return {
@@ -280,6 +332,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         // Only tear down the seat if this socket is still the one bound to it — if it was
         // already evicted by a newer connection for the same player, leave that state alone.
         if (room && room.socketByPlayerId.get(playerId) === socket.id) {
+          logEvent('player_left', { ...actor(socket) });
           room.socketByPlayerId.delete(playerId);
           room.focusedByPlayerId.delete(playerId);
           setConnected(room, playerId, false);
@@ -299,6 +352,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can start the game.');
       if (room.gameState) throw new GolfEngineError('ALREADY_STARTED', 'The game has already started.');
       const match = createMatch(room.code, room.hostId, room.lobbyPlayers);
+      logEvent('match_started', { room: room.code, players: room.lobbyPlayers.map((p) => p.name).join(',') });
       room.gameState = dealHole(match);
       broadcastGameState(room.gameState);
       notifyOnStateChange(match, room);
@@ -316,6 +370,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       // playerTokens/socketByPlayerId are untouched, so everyone's reconnect credentials still work.
       room.lobbyPlayers = state.players.map((p) => ({ id: p.id, name: p.name, connected: p.connected }));
       room.gameState = null;
+      logEvent('match_restarted', { ...actor(socket), players: room.lobbyPlayers.length });
       broadcastLobby(room);
       return null;
     });
@@ -332,6 +387,10 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         throw new GolfEngineError('PLAYER_NOT_FOUND', 'That player is no longer in the room.');
       }
 
+      logEvent('player_removed', {
+        ...actor(socket),
+        removed: room.lobbyPlayers.find((p) => p.id === targetId)?.name,
+      });
       room.lobbyPlayers = room.lobbyPlayers.filter((p) => p.id !== targetId);
       room.playerTokens.delete(targetId);
       const targetSocketId = room.socketByPlayerId.get(targetId);
@@ -426,9 +485,32 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const room = requireRoom(socket.data.roomCode);
       const state = requireGameState(room);
       if (room.hostId !== requirePlayerId(socket)) throw new GolfEngineError('NOT_HOST', 'Only the host can end the match.');
+      logEvent('match_ended_by_host', {
+        ...actor(socket),
+        hole: state.holeNumber,
+        phase: state.phase,
+        holesScored: Math.max(0, ...state.players.map((p) => p.holeScores.length)),
+      });
       room.gameState = endMatch(state);
       broadcastGameState(room.gameState);
       return null;
+    });
+  });
+
+  // Reports from the app about things only the device can see (a button that got no answer, a
+  // crash, a dropped connection). Capped per connection so a misbehaving client can't flood the log.
+  let clientLogTimes: number[] = [];
+  socket.on('client:log', (payload) => {
+    const now = Date.now();
+    clientLogTimes = clientLogTimes.filter((t) => now - t < 60_000);
+    if (clientLogTimes.length >= 20) return;
+    clientLogTimes.push(now);
+    if (!payload || typeof payload.kind !== 'string' || typeof payload.detail !== 'string') return;
+    logEvent('client_report', {
+      ...actor(socket),
+      kind: payload.kind.slice(0, 40),
+      detail: payload.detail.slice(0, 300),
+      ua: typeof payload.ua === 'string' ? payload.ua.slice(0, 160) : undefined,
     });
   });
 
@@ -507,6 +589,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         title: 'Golf Card Game',
         body: `Nudge from ${nudger?.name ?? 'a player'}: ${turnMessage(latest)}`,
       });
+      logEvent('nudge_sent', { ...actor(socket), target: target.name });
       callback({ ok: true, data: null });
     } catch (err) {
       if (claimed) {
@@ -514,7 +597,14 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         if (claimed.previous === undefined) claimed.room.lastNudgeAtByTarget.delete(claimed.targetId);
         else claimed.room.lastNudgeAtByTarget.set(claimed.targetId, claimed.previous);
       }
-      callback({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      logEvent('action_rejected', {
+        action: 'game:nudge',
+        code: err instanceof GolfEngineError ? err.code : 'ERROR',
+        message,
+        ...actor(socket),
+      });
+      callback({ ok: false, error: message });
     }
   });
 
@@ -537,7 +627,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
     });
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
     const { roomCode, playerId } = socket.data;
     if (!roomCode || !playerId) return;
     const room = rooms.get(roomCode);
@@ -545,8 +635,12 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
     // If a newer socket already took over this player's seat (e.g. this is the stale
     // connection being evicted during a reconnect), don't clobber the fresh state.
-    if (room.socketByPlayerId.get(playerId) !== socket.id) return;
+    if (room.socketByPlayerId.get(playerId) !== socket.id) {
+      logEvent('connection_replaced', { ...actor(socket), reason });
+      return;
+    }
 
+    logEvent('player_disconnected', { ...actor(socket), reason, phase: room.gameState?.phase ?? 'lobby' });
     room.socketByPlayerId.delete(playerId);
     room.focusedByPlayerId.delete(playerId);
     setConnected(room, playerId, false);
@@ -554,6 +648,20 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 });
 
+// Same outcome as Node's default (the process exits and Railway restarts it), but leaves a
+// readable line in the log first so a crash isn't a mystery.
+process.on('uncaughtException', (err) => {
+  logEvent('uncaught_exception', { message: err.message });
+  console.error(err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  logEvent('unhandled_rejection', { message: reason instanceof Error ? reason.message : String(reason) });
+  console.error(reason);
+  process.exit(1);
+});
+
 httpServer.listen(PORT, () => {
   console.log(`Golf server listening on http://localhost:${PORT}`);
+  logEvent('server_started', { port: PORT });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AckResponse, ChatMessage, GameStateView, LobbyView, ServerFeatures } from '@golf/engine';
-import { socket } from './socket.js';
+import { reportToServer, socket } from './socket.js';
 import { clearSession, loadSession, saveSession } from './session.js';
 import { getOrCreatePushSubscription, isPushSupported } from './push.js';
 import { Home } from './components/Home.js';
@@ -34,8 +34,18 @@ export default function App() {
   const [lastSeenChatId, setLastSeenChatId] = useState<string | null>(null);
 
   useEffect(() => {
+    // When the connection last dropped, so the reconnect can be reported with how long it took.
+    let lastDisconnect: { reason: string; at: number } | null = null;
+
     function attemptResume() {
       setSocketConnected(true);
+      if (lastDisconnect) {
+        reportToServer(
+          'reconnected',
+          `connection was down ${Math.round((Date.now() - lastDisconnect.at) / 1000)}s (reason: ${lastDisconnect.reason})`,
+        );
+        lastDisconnect = null;
+      }
       socket.emit('server:features', {}, (res) => {
         if (res.ok) setFeatures(res.data);
       });
@@ -52,6 +62,7 @@ export default function App() {
           setGameState(res.data.gameState);
           setError(null);
         } else {
+          reportToServer('resume_failed', res.error);
           clearSession();
           setError(res.error);
         }
@@ -61,6 +72,7 @@ export default function App() {
 
     function handleDisconnect(reason: string) {
       setSocketConnected(false);
+      lastDisconnect = { reason, at: Date.now() };
       // The server only force-disconnects a socket when a newer connection took over the same
       // player identity (see bindSocketToPlayer's eviction in the server) — with localStorage,
       // that now happens whenever this identity is opened in a second tab/window. socket.io does
@@ -169,6 +181,22 @@ export default function App() {
     const seenIndex = lastSeenChatId ? chatMessages.findIndex((m) => m.id === lastSeenChatId) : -1;
     return chatMessages.slice(seenIndex + 1).filter((m) => m.playerId !== playerId).length;
   }, [chatOpen, chatMessages, lastSeenChatId, playerId]);
+
+  // Crashes on a player's phone are otherwise invisible to us; forward them to the server log.
+  useEffect(() => {
+    function onError(e: ErrorEvent) {
+      reportToServer('js_error', `${e.message} (${e.filename?.split('/').pop() ?? '?'}:${e.lineno})`);
+    }
+    function onRejection(e: PromiseRejectionEvent) {
+      reportToServer('js_unhandled_rejection', String(e.reason instanceof Error ? e.reason.message : e.reason));
+    }
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
 
   // Clears the home-screen app badge as soon as the page loads — covers opening the app from
   // its icon directly (not via tapping the notification, which already clears it itself in
@@ -321,6 +349,7 @@ export default function App() {
           onDrawDiscard={() => socket.emit('game:drawDiscard', {}, reportIfError)}
           onSwap={(slotIndex) => socket.emit('game:swap', { slotIndex }, reportIfError)}
           onDiscard={() => socket.emit('game:discard', {}, reportIfError)}
+          onReport={reportToServer}
           nudgeAvailable={features.nudge}
           onNudge={(done) => socket.emit('game:nudge', {}, done)}
           onNextHole={() => socket.emit('game:nextHole', {}, reportIfError)}

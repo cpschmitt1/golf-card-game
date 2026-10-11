@@ -148,6 +148,46 @@ describe('full hole flow', () => {
   });
 });
 
+describe('final-turns reveal', () => {
+  it("turns a player's hand face up right after their final turn, before the others have gone", () => {
+    const match = createMatch('ABCD', 'p1', [
+      { id: 'p1', name: 'Alice' },
+      { id: 'p2', name: 'Bob' },
+      { id: 'p3', name: 'Cy' },
+    ]);
+    let state = dealHole(match, mulberry32(42));
+    for (const id of ['p1', 'p2', 'p3']) state = choosePeek(state, id, [0, 1]);
+
+    let guard = 0;
+    while (state.phase === 'turn') {
+      if (++guard > 100) throw new Error('runaway loop');
+      const currentId = state.players[state.currentPlayerIndex].id;
+      state = drawFromDrawPile(state, currentId);
+      const player = state.players.find((p) => p.id === currentId)!;
+      state = swapCard(state, currentId, player.grid.findIndex((s) => !s.faceUp));
+    }
+
+    expect(state.phase).toBe('final-turns');
+    expect(state.finalTurnsRemaining).toBe(2);
+    const firstFinalId = state.players[state.currentPlayerIndex].id;
+    const secondFinalId = state.players.find((p) => p.id !== state.finisherId && p.id !== firstFinalId)!.id;
+    const grid = (id: string) => state.players.find((p) => p.id === id)!.grid;
+
+    // Before their final turn, the first final-turn player still has hidden cards.
+    expect(grid(firstFinalId).some((s) => !s.faceUp)).toBe(true);
+
+    state = drawFromDrawPile(state, firstFinalId);
+    state = discardDrawn(state, firstFinalId);
+
+    // The hole isn't over (one more player to go), but the player who just finished is fully revealed...
+    expect(state.phase).toBe('final-turns');
+    expect(state.finalTurnsRemaining).toBe(1);
+    expect(grid(firstFinalId).every((s) => s.faceUp)).toBe(true);
+    // ...while the player who hasn't taken their final turn yet keeps their hidden cards.
+    expect(grid(secondFinalId).some((s) => !s.faceUp)).toBe(true);
+  });
+});
+
 describe('endMatch', () => {
   it('discards an in-progress hole: no score recorded, cards left exactly as they were', () => {
     let state = newTwoPlayerHole();

@@ -154,6 +154,9 @@ function advanceTurn(state: GameState, justTriggeredFinalTurns: boolean): GameSt
 
   if (state.phase === 'final-turns') {
     if (!justTriggeredFinalTurns) {
+      // currentPlayerIndex still points at the player who just took their final turn. Turn their
+      // hand over now so they can see their score without waiting for the others to finish.
+      for (const slot of state.players[state.currentPlayerIndex].grid) slot.faceUp = true;
       state.finalTurnsRemaining -= 1;
     }
     if (state.finalTurnsRemaining <= 0) {

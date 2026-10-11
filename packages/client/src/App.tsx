@@ -325,7 +325,7 @@ export default function App() {
           onNudge={(done) => socket.emit('game:nudge', {}, done)}
           onNextHole={() => socket.emit('game:nextHole', {}, reportIfError)}
           onEndMatch={() => socket.emit('game:endMatch', {}, reportIfError)}
-          onPlayAgain={() => socket.emit('room:restart', {}, reportIfError)}
+          onPlayAgain={(done) => socket.emit('room:restart', {}, done)}
           onLeave={handleLeave}
         />
         {chatPanel}

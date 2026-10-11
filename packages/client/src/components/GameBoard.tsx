@@ -18,7 +18,7 @@ interface GameBoardProps {
   onNudge: (done: (res: AckResponse<null>) => void) => void;
   onNextHole: () => void;
   onEndMatch: () => void;
-  onPlayAgain: () => void;
+  onPlayAgain: (done: (res: AckResponse<null>) => void) => void;
   onLeave: () => void;
 }
 
@@ -40,6 +40,7 @@ export function GameBoard({
   const [selectedPeekSlots, setSelectedPeekSlots] = useState<number[]>([]);
   const [nudge, setNudge] = useState<{ sent: boolean; message: string } | null>(null);
   const [scoresOpen, setScoresOpen] = useState(false);
+  const [restart, setRestart] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [dealerLabelOpen, setDealerLabelOpen] = useState(false);
 
   const me = state.players.find((p) => p.id === playerId);
@@ -75,6 +76,12 @@ export function GameBoard({
   useEffect(() => {
     setSelectedPeekSlots([]);
   }, [amAwaitingPeek, state.holeNumber]);
+
+  // When the match ends (or this screen is opened on an already-finished match, e.g. after a
+  // reconnect), open the final results automatically. Closing it afterwards sticks.
+  useEffect(() => {
+    if (state.matchComplete) setScoresOpen(true);
+  }, [state.matchComplete]);
 
   // A nudge result only describes whoever was up when it was sent.
   useEffect(() => {
@@ -142,6 +149,20 @@ export function GameBoard({
     </span>
   );
   const canNudge = nudgeAvailable && !isMyTurn && !!state.currentPlayerId && (state.phase === 'turn' || state.phase === 'final-turns');
+
+  // Play Again used to fail silently (no spinner, and server errors never reached this screen), so
+  // it now shows progress, shows a rejection, and gives up visibly if the server never answers.
+  function handlePlayAgain() {
+    setRestart({ busy: true, error: null });
+    const timer = setTimeout(
+      () => setRestart({ busy: false, error: 'No response from the server — check your connection and try again.' }),
+      6000,
+    );
+    onPlayAgain((res) => {
+      clearTimeout(timer);
+      setRestart({ busy: false, error: res.ok ? null : res.error });
+    });
+  }
 
   function handleNudge() {
     onNudge((res) => setNudge(res.ok ? { sent: true, message: `Nudge sent to ${currentPlayerName}.` } : { sent: false, message: res.error }));
@@ -278,14 +299,15 @@ export function GameBoard({
           {state.matchComplete && (
             <>
               <h2>Match complete</h2>
-              <p className="hint">
-                {hasCompletedHoles ? 'Lowest score wins!' : 'Match ended before any hole finished — no scores to show.'}
-              </p>
+              <button onClick={() => setScoresOpen(true)}>Final results</button>{' '}
               {isHost ? (
-                <button onClick={onPlayAgain}>Play Again</button>
+                <button disabled={restart.busy} onClick={handlePlayAgain}>
+                  {restart.busy ? 'Starting…' : 'Play Again'}
+                </button>
               ) : (
                 <p className="hint">Waiting for the host to start a new match…</p>
               )}
+              {restart.error && <p className="error-text">{restart.error}</p>}
             </>
           )}
           <button className="link-button" onClick={onLeave}>
@@ -294,7 +316,25 @@ export function GameBoard({
         </section>
       )}
 
-      {scoresOpen && <ScoresPanel players={state.players} myPlayerId={playerId} onClose={() => setScoresOpen(false)} />}
+      {scoresOpen && (
+        <ScoresPanel
+          players={state.players}
+          myPlayerId={playerId}
+          onClose={() => setScoresOpen(false)}
+          final={
+            state.matchComplete
+              ? {
+                  isHost,
+                  hasScores: hasCompletedHoles,
+                  restartBusy: restart.busy,
+                  restartError: restart.error,
+                  onPlayAgain: handlePlayAgain,
+                  onLeave,
+                }
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 }

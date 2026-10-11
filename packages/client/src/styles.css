@@ -426,6 +426,30 @@ input {
   padding: 0.6rem 1rem max(1rem, env(safe-area-inset-bottom));
 }
 
+.scores-winner {
+  margin: 0 0 0.8rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.scores-footer {
+  flex-shrink: 0;
+  padding: 0.7rem 1rem max(0.8rem, env(safe-area-inset-bottom));
+  border-top: 1px solid #ddd0b0;
+  text-align: center;
+}
+
+.scores-footer .hint,
+.scores-footer .error-text {
+  margin: 0 0 0.4rem;
+}
+
+.scores-footer .link-button {
+  margin-top: 0.4rem;
+  color: var(--ink);
+}
+
 .standings {
   list-style: none;
   margin: 0 0 1rem;

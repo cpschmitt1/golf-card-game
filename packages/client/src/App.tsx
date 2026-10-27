@@ -64,7 +64,14 @@ export default function App() {
         } else {
           reportToServer('resume_failed', res.error);
           clearSession();
-          setError(res.error);
+          // The server doesn't know this player any more (typically it restarted for an update and
+          // all rooms went with it). Don't leave the old game on screen: every button on it would
+          // fail with "not in a room".
+          setPlayerId(null);
+          setRoomCode(null);
+          setLobby(null);
+          setGameState(null);
+          setError('That game is no longer available — it was probably reset by an update. Create or join a new room to keep playing.');
         }
         setReconnecting(false);
       });
